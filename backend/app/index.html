@@ -1,0 +1,161 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Public Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 650px;
+      margin: 40px auto;
+      padding: 16px;
+    }
+
+    input, button {
+      padding: 10px;
+      margin: 4px 0;
+      box-sizing: border-box;
+    }
+
+    input { width: 100%; }
+    button { cursor: pointer; }
+
+    #messages {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+      height: 300px;
+      overflow-y: auto;
+      list-style: none;
+    }
+
+    #messages li { margin: 10px 0; }
+    #status { margin: 10px 0; }
+    #chat { display: none; }
+  </style>
+</head>
+<body>
+  <h2>Public Chat Rooms</h2>
+
+  <section id="join">
+    <input id="username" placeholder="Choose a username (3–20 chars)">
+    <input id="room" placeholder="Room name" value="general">
+    <button id="joinBtn">Join room</button>
+  </section>
+
+  <section id="chat">
+    <h3 id="roomTitle"></h3>
+    <div id="status">Connecting...</div>
+    <ul id="messages"></ul>
+
+    <form id="chatForm">
+      <input id="message" placeholder="Type a message..." maxlength="2000"
+             autocomplete="off">
+      <button id="sendBtn" type="submit">Send</button>
+    </form>
+
+    <button id="leaveBtn">Leave room</button>
+  </section>
+
+  <script>
+    let socket = null;
+
+    const joinSection = document.getElementById("join");
+    const chatSection = document.getElementById("chat");
+    const status = document.getElementById("status");
+    const messages = document.getElementById("messages");
+    const messageInput = document.getElementById("message");
+    const sendBtn = document.getElementById("sendBtn");
+
+    function addMessage(text) {
+      const item = document.createElement("li");
+      item.textContent = text;
+      messages.appendChild(item);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    document.getElementById("joinBtn").onclick = () => {
+      const username =
+        document.getElementById("username").value.trim();
+      const room =
+        document.getElementById("room").value.trim();
+
+      if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+        alert("Username must be 3–20 letters, numbers or underscores.");
+        return;
+      }
+
+      if (!/^[a-zA-Z0-9_-]{1,30}$/.test(room)) {
+        alert("Use letters, numbers, underscores or hyphens for the room.");
+        return;
+      }
+
+      messages.replaceChildren();
+
+      const protocol =
+        location.protocol === "https:" ? "wss:" : "ws:";
+
+      socket = new WebSocket(
+        `${protocol}//127.0.0.1:8080/ws/${encodeURIComponent(room)}` +
+        `?username=${encodeURIComponent(username)}`
+      );
+
+      joinSection.style.display = "none";
+      chatSection.style.display = "block";
+      document.getElementById("roomTitle").textContent =
+        `Room: #${room}`;
+      status.textContent = "Connecting...";
+      sendBtn.disabled = true;
+
+      socket.onopen = () => {
+        status.textContent = "Connected";
+        sendBtn.disabled = false;
+        messageInput.focus();
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "message") {
+          addMessage(`${data.username}: ${data.message}`);
+        } else if (data.type === "system") {
+          addMessage(`* ${data.message}`);
+        } else if (data.type === "error") {
+          addMessage(`Error: ${data.message}`);
+        }
+      };
+
+      socket.onclose = () => {
+        status.textContent = "Disconnected";
+        sendBtn.disabled = true;
+      };
+
+      socket.onerror = () => {
+        status.textContent = "Connection error";
+      };
+    };
+
+    document.getElementById("chatForm").onsubmit = (event) => {
+      event.preventDefault();
+
+      const message = messageInput.value.trim();
+
+      if (socket?.readyState === WebSocket.OPEN && message) {
+        socket.send(JSON.stringify({ message }));
+        messageInput.value = "";
+      }
+    };
+
+    document.getElementById("leaveBtn").onclick = () => {
+      if (socket) socket.close();
+
+      socket = null;
+      chatSection.style.display = "none";
+      joinSection.style.display = "block";
+      messages.replaceChildren();
+    };
+  </script>
+</body>
+</html>
