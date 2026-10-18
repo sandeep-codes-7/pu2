@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, List
+from pydantic import BaseModel, Field
+from typing import Optional, List, Union
 from datetime import datetime
 
 # Token Schemas
@@ -41,6 +41,8 @@ class UserOut(BaseModel):
     interests: Optional[str] = "Coding, Gaming, Tech"
     provider: Optional[str] = "google"
     created_at: datetime
+    friendship_status: Optional[str] = None  # None, "pending_sent", "pending_received", "accepted"
+    friend_request_id: Optional[str] = None
     # Note: email is purposefully excluded from UserOut so emails are never exposed
 
     class Config:
@@ -48,7 +50,7 @@ class UserOut(BaseModel):
 
 class UserProfileDetails(BaseModel):
     user: UserOut
-    friendship_status: Optional[str] = None # None, "pending_sent", "pending_received", "accepted"
+    friendship_status: Optional[str] = None  # None, "pending_sent", "pending_received", "accepted"
     friends_count: int = 0
     friends: List[UserOut] = []
     pending_requests: List["FriendRequestOut"] = []
@@ -58,7 +60,7 @@ class FriendRequestCreate(BaseModel):
     addressee_id: str
 
 class FriendRequestRespond(BaseModel):
-    status: str # "accepted" or "declined"
+    status: str  # "accepted", "declined", or "ignored"
 
 class FriendRequestOut(BaseModel):
     id: str
@@ -82,19 +84,51 @@ class DemoLoginRequest(BaseModel):
     name: Optional[str] = None
     gender: Optional[str] = "Prefer not to say"
 
+# Room Moderator Schemas
+class ModeratorOut(BaseModel):
+    user_id: str
+    username: str
+    name: str
+    avatar: Optional[str] = None
+    is_prime: bool
+
+    class Config:
+        from_attributes = True
+
+class AddModeratorPayload(BaseModel):
+    user_id: str
+
+class RemoveModeratorPayload(BaseModel):
+    user_id: str
+
+class AddRoomMemberPayload(BaseModel):
+    user_id: str
+
+class RemoveRoomMemberPayload(BaseModel):
+    user_id: str
+
 # Room Schemas
 class RoomCreate(BaseModel):
     slug: str = Field(..., min_length=1, max_length=50)
     title: str = Field(..., min_length=1, max_length=100)
-    topic: Optional[str] = None
+    description: Optional[str] = None
+
+class RoomUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    picture: Optional[str] = None   # URL after image upload
 
 class RoomOut(BaseModel):
     id: str
     slug: str
     title: str
-    topic: Optional[str] = None
+    description: Optional[str] = None
+    picture: Optional[str] = None
+    creator_id: Optional[str] = None
+    is_private: bool = False
     online_count: int = 0
     created_at: datetime
+    moderators: List[ModeratorOut] = []
 
     class Config:
         from_attributes = True
@@ -122,3 +156,46 @@ class MessageOut(BaseModel):
 
 Token.update_forward_refs()
 UserProfileDetails.update_forward_refs()
+
+
+# ─────────────────────────────────────────────────────────────────
+# MATE SCHEMAS
+# ─────────────────────────────────────────────────────────────────
+class MateQueueJoinRequest(BaseModel):
+    interests: Union[str, List[str]] = Field(..., description="Comma-separated string or list of interests")
+
+
+class MateQueueStatusResponse(BaseModel):
+    status: str  # "idle", "searching", "matched"
+    expires_at: Optional[datetime] = None
+    conversation_id: Optional[str] = None
+    normalized_interests: List[str] = []
+
+
+class MateConversationDetail(BaseModel):
+    id: str
+    is_active: bool
+    status: str = "active"
+    mutual_interest: bool
+    your_nickname: str
+    my_nickname: str
+    partner_nickname: str
+    you_are_interested: bool
+    my_interest: bool = False
+    partner_interest: bool = False
+    partner_has_left: bool
+    you_have_left: bool
+    has_left: bool = False
+    partner_user_id: Optional[str] = None
+    partner_profile: Optional[UserOut] = None  # Only populated when mutual_interest is True!
+    created_at: datetime
+
+
+class MateMessageOut(BaseModel):
+    id: str
+    conversation_id: str
+    sender_nickname: str
+    is_you: bool
+    content: str
+    created_at: datetime
+

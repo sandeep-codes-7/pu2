@@ -21,6 +21,7 @@ from app.database import init_db, AsyncSessionLocal
 from app.models.entities import User, Room, Message
 from app.routers import auth as auth_router
 from app.routers import chat as chat_router
+from app.routers import mate as mate_router
 from app.utils.hub import hub
 from app.dependencies.auth import get_user_from_token_string
 
@@ -49,6 +50,7 @@ app.add_middleware(
 # Include Routers
 app.include_router(auth_router.router)
 app.include_router(chat_router.router)
+app.include_router(mate_router.router)
 
 @app.get("/health")
 def health():
@@ -237,6 +239,96 @@ async def websocket_gateway(
                     await hub.broadcast_to_room(room_slug, typing_data, exclude_ws=websocket)
                 elif recipient_id:
                     await hub.send_to_user(recipient_id, typing_data)
+
+            elif action == "send_mate_message":
+                # Protected: Instant Pass users are blocked from Mate messaging
+                if user_info.get("provider") == "demo":
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "You should login to use these features."
+                    })
+                    continue
+
+                conversation_id = payload.get("conversation_id")
+                content = (payload.get("content") or "").strip()
+                if conversation_id and content and len(content) <= 5000:
+                    from app.models.entities import MateConversation, MateParticipant, MateMessage
+                    async with AsyncSessionLocal() as db:
+                        res_conv = await db.execute(
+                            select(MateConversation).filter(MateConversation.id == conversation_id)
+                        )
+                        conv = res_conv.scalars().first()
+                        if not conv or conv.status != "active":
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "This Mate conversation has ended or is not active"
+                            })
+                            continue
+
+                        res_parts = await db.execute(
+                            select(MateParticipant).filter(MateParticipant.conversation_id == conversation_id)
+                        )
+                        participants = res_parts.scalars().all()
+                        me = next((p for p in participants if p.user_id == user_info["id"]), None)
+                        if not me or me.has_left:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "You are not an active participant in this conversation"
+                            })
+                            continue
+
+                        partner = next((p for p in participants if p.user_id != user_info["id"]), None)
+                        if not partner or partner.has_left:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "The other participant has left this conversation"
+                            })
+                            continue
+
+                        db_msg = MateMessage(
+                            conversation_id=conversation_id,
+                            sender_id=user_info["id"],
+                            sender_nickname=me.nickname,
+                            content=content
+                        )
+                        db.add(db_msg)
+                        await db.commit()
+                        await db.refresh(db_msg)
+
+                        created_at_iso = datetime.datetime.utcnow().isoformat()
+                        mate_msg_data = {
+                            "type": "mate_message",
+                            "id": db_msg.id,
+                            "conversation_id": conversation_id,
+                            "sender_nickname": me.nickname,
+                            "sender_id": user_info["id"],
+                            "content": content,
+                            "created_at": created_at_iso
+                        }
+
+                        # Deliver to both participants
+                        await hub.send_to_user(me.user_id, mate_msg_data)
+                        await hub.send_to_user(partner.user_id, mate_msg_data)
+
+            elif action == "mate_typing":
+                conversation_id = payload.get("conversation_id")
+                is_typing = payload.get("is_typing", True)
+                if conversation_id and user_info.get("provider") != "demo":
+                    from app.models.entities import MateParticipant
+                    async with AsyncSessionLocal() as db:
+                        res_parts = await db.execute(
+                            select(MateParticipant).filter(MateParticipant.conversation_id == conversation_id)
+                        )
+                        participants = res_parts.scalars().all()
+                        me = next((p for p in participants if p.user_id == user_info["id"]), None)
+                        partner = next((p for p in participants if p.user_id != user_info["id"]), None)
+                        if me and partner and not me.has_left and not partner.has_left:
+                            await hub.send_to_user(partner.user_id, {
+                                "type": "mate_typing_status",
+                                "conversation_id": conversation_id,
+                                "nickname": me.nickname,
+                                "is_typing": is_typing
+                            })
 
     except WebSocketDisconnect:
         pass

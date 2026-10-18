@@ -47,3 +47,15 @@ async def get_user_from_token_string(token: str, db: AsyncSession) -> User | Non
         return None
     result = await db.execute(select(User).filter(User.id == user_id))
     return result.scalars().first()
+
+async def get_authenticated_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """Enforces that the user is a fully authenticated user and not an Instant Pass guest."""
+    if current_user.provider == "demo":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You should login to use these features."
+        )
+    return current_user
+
