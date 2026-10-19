@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import delete, and_, or_
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from app.database import get_db
@@ -38,10 +38,18 @@ async def join_mate_queue(
     
     expires_at_dt = None
     if result.get("expires_at"):
-        try:
-            expires_at_dt = datetime.fromisoformat(result["expires_at"])
-        except Exception:
-            pass
+        val = result["expires_at"]
+        if isinstance(val, str):
+            if val.endswith("Z"):
+                val = val[:-1] + "+00:00"
+            try:
+                expires_at_dt = datetime.fromisoformat(val)
+            except Exception:
+                pass
+        elif isinstance(val, datetime):
+            expires_at_dt = val
+        if expires_at_dt and expires_at_dt.tzinfo is None:
+            expires_at_dt = expires_at_dt.replace(tzinfo=timezone.utc)
 
     return MateQueueStatusResponse(
         status=result.get("status"),
@@ -89,9 +97,10 @@ async def get_queue_status(
             interests = json.loads(entry.interests_json)
         except Exception:
             interests = []
+        exp = entry.expires_at.replace(tzinfo=timezone.utc) if entry.expires_at and entry.expires_at.tzinfo is None else entry.expires_at
         return MateQueueStatusResponse(
             status="searching",
-            expires_at=entry.expires_at,
+            expires_at=exp,
             normalized_interests=interests
         )
 

@@ -203,6 +203,6 @@ async def find_or_enqueue_match(
 
     return {
         "status": "searching",
-        "expires_at": expires_at.isoformat(),
+        "expires_at": expires_at.isoformat() + "Z",
         "normalized_interests": normalized
     }

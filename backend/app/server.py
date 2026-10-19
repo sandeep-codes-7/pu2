@@ -350,4 +350,9 @@ async def websocket_gateway(
                         await db.commit()
 
 if __name__ == "__main__":
-    uvicorn.run("app.server:app", host="127.0.0.1", port=8080, reload=True)
+    import os, sys
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    uvicorn.run("app.server:app", host="0.0.0.0", port=8080, reload=True)

@@ -5,14 +5,15 @@ import {
   UserPlus, Check, X, UserCheck, Clock, Sparkles, Edit3,
   Shield, ShieldPlus, ShieldOff, Trash2, Settings, Camera,
   Upload, Image, ChevronDown, Crown, UserMinus, User as UserIcon,
-  Heart, AlertCircle, CheckCircle2, Loader2, Flame
+  Heart, AlertCircle, CheckCircle2, Loader2, Flame,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 
 const API_BASE = window.location.origin.includes(":5173")
-  ? "http://localhost:8080"
+  ? `http://${window.location.hostname}:8080`
   : window.location.origin;
 const WS_BASE = window.location.origin.includes(":5173")
-  ? "ws://localhost:8080"
+  ? `ws://${window.location.hostname}:8080`
   : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
 
 const ANIMAL_EMOJIS = {
@@ -47,7 +48,19 @@ export default function App() {
   const [snackbar, setSnackbar] = useState(null);
   const snackbarTimerRef = useRef(null);
 
-  // Navigation
+  // Navigation & Layout
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem("pairup_sidebar_collapsed") === "true";
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem("pairup_sidebar_collapsed", String(next));
+      return next;
+    });
+  };
+
   const [viewMode, setViewMode] = useState("chat"); // "chat" | "explore" | "mate" | "mate_chat"
   const [activeTab, setActiveTab] = useState({ type: "room", id: null, data: null });
 
@@ -390,13 +403,29 @@ export default function App() {
     return () => ws.close();
   }, [token, activeTab.type, activeTab.id, loadMateConversation, showSnackbar, refreshPendingCount]);
 
+  // Expiration Date Parser (guarantees UTC handling across timezones)
+  const parseExpirationDate = useCallback((expStr) => {
+    if (!expStr) return 0;
+    if (typeof expStr === "number") return expStr;
+    let s = String(expStr).trim();
+    if (!s) return 0;
+    // If no timezone indicator ('Z' or '+' or offset after time), treat as UTC
+    if (!s.endsWith("Z") && !s.includes("+") && !s.slice(10).includes("-")) {
+      s += "Z";
+    }
+    const t = new Date(s).getTime();
+    return isNaN(t) ? 0 : t;
+  }, []);
+
   // 5-minute Countdown Timer Effect
   useEffect(() => {
     if (mateStatus !== "searching" || !mateExpiresAt) return;
 
     const tick = () => {
       const now = Date.now();
-      const expTime = new Date(mateExpiresAt).getTime();
+      const expTime = parseExpirationDate(mateExpiresAt);
+      if (!expTime) return;
+
       const diffSec = Math.max(0, Math.floor((expTime - now) / 1000));
       setMateRemainingSeconds(diffSec);
 
@@ -407,7 +436,7 @@ export default function App() {
         if (token) {
           fetch(`${API_BASE}/api/mate/queue/cancel`, {
             method: "POST",
-            headers: { Authorization: `Bearer ${token}` }
+            headers: authHeaders()
           }).catch(() => {});
         }
       }
@@ -416,7 +445,7 @@ export default function App() {
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [mateStatus, mateExpiresAt, token, showSnackbar]);
+  }, [mateStatus, mateExpiresAt, token, showSnackbar, authHeaders, parseExpirationDate]);
 
   // Initial Mate queue status check on mount
   useEffect(() => {
@@ -428,6 +457,9 @@ export default function App() {
       .then(d => {
         if (!d) return;
         if (d.status === "searching") {
+          const expTime = parseExpirationDate(d.expires_at);
+          const initialSec = expTime ? Math.max(0, Math.floor((expTime - Date.now()) / 1000)) : 300;
+          setMateRemainingSeconds(initialSec);
           setMateStatus("searching");
           setMateExpiresAt(d.expires_at);
         } else if (d.status === "matched" && d.conversation_id) {
@@ -438,7 +470,7 @@ export default function App() {
       })
       .catch(() => {});
     }
-  }, [token, currentUser, loadMateConversation]);
+  }, [token, currentUser, loadMateConversation, parseExpirationDate]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { mateMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [mateMessages]);
@@ -651,6 +683,11 @@ export default function App() {
         headers: authHeaders(),
         body: JSON.stringify({ interests: mateInterestsInput })
       });
+      if (res.status === 401) {
+        showSnackbar("Session expired. Please log in again.", "error");
+        handleLogout();
+        return;
+      }
       const data = await res.json();
       if (!res.ok) {
         showSnackbar(data.detail || "Could not start matchmaking", "error");
@@ -664,6 +701,9 @@ export default function App() {
         setViewMode("mate_chat");
         showSnackbar(`Match found! Connected with ${data.partner_nickname}`, "success");
       } else {
+        const expTime = parseExpirationDate(data.expires_at);
+        const initialSec = expTime ? Math.max(0, Math.floor((expTime - Date.now()) / 1000)) : 300;
+        setMateRemainingSeconds(initialSec);
         setMateStatus("searching");
         setMateExpiresAt(data.expires_at);
         showSnackbar("Searching for your mate...", "info");
@@ -982,7 +1022,7 @@ export default function App() {
               <option value="Other">Gender: Other</option>
             </select>
             <button type="submit" className="btn-primary full-width" style={{ marginTop: "4px" }}>
-              Enter PairUP
+              Enter as Instant Pass (Guest)
             </button>
           </form>
 
@@ -1010,14 +1050,29 @@ export default function App() {
   return (
     <div className="app-container">
       {/* ── SIDEBAR ── */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
         <div className="brand-header">
-          <div className="brand-logo" onClick={() => setViewMode("chat")}>
-            <h1 className="brand-gradient">PairUP</h1>
-          </div>
-          <button className="btn-section-action" title="Explore Friends" onClick={() => { setViewMode("explore"); loadExploreUsers(searchQuery); }}>
-            <Users size={18} />
-          </button>
+          {!isSidebarCollapsed ? (
+            <>
+              <div className="brand-logo" onClick={() => setViewMode("chat")}>
+                <h1 className="brand-gradient">PairUP</h1>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <button className="btn-section-action" title="Explore Friends" onClick={() => { setViewMode("explore"); loadExploreUsers(searchQuery); }}>
+                  <Users size={18} />
+                </button>
+                <button className="btn-section-action" title="Collapse sidebar" onClick={toggleSidebar}>
+                  <PanelLeftClose size={18} />
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
+              <button className="btn-section-action" title="Expand sidebar" onClick={toggleSidebar}>
+                <PanelLeftOpen size={19} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Navigation Tabs */}
@@ -1026,46 +1081,67 @@ export default function App() {
             type="button"
             className={`nav-tab-btn ${viewMode === "chat" ? "active" : ""}`}
             onClick={() => setViewMode("chat")}
+            title="Chats"
           >
-            <MessageSquare size={15} /> Chats
+            <MessageSquare size={16} />
+            {!isSidebarCollapsed && <span>Chats</span>}
           </button>
           <button
             type="button"
             className={`nav-tab-btn ${viewMode === "explore" ? "active" : ""}`}
             onClick={() => { setViewMode("explore"); loadExploreUsers(searchQuery); }}
+            title="Explore Friends"
           >
-            <Users size={15} /> Explore
+            <Users size={16} />
+            {!isSidebarCollapsed && <span>Explore</span>}
           </button>
           <button
             type="button"
             className={`nav-tab-btn ${viewMode === "mate" || viewMode === "mate_chat" ? "active" : ""}`}
             onClick={handleNavigateMate}
+            title="Mate - Anonymous Matchmaking"
           >
-            <Sparkles size={15} /> Mate
-            <span className="mate-sparkle-badge">NEW</span>
+            <Sparkles size={16} />
+            {!isSidebarCollapsed && (
+              <>
+                <span>Mate</span>
+                <span className="mate-sparkle-badge">NEW</span>
+              </>
+            )}
           </button>
         </div>
 
         <div className="sidebar-scroll">
           {/* Chat Rooms */}
           <div>
-            <div className="section-label">
-              <span>Rooms</span>
-              <button className="btn-section-action" title="Create Room" onClick={() => setIsCreateRoomOpen(true)}>
-                <Plus size={15} />
-              </button>
-            </div>
-
-            {rooms.length === 0 ? (
-              <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
-                No rooms yet. Be the first to create one!
+            {!isSidebarCollapsed ? (
+              <div className="section-label">
+                <span>Rooms</span>
+                <button className="btn-section-action" title="Create Room" onClick={() => setIsCreateRoomOpen(true)}>
+                  <Plus size={15} />
+                </button>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "4px" }}>
+                <div className="sidebar-collapsed-section-divider" title="Rooms" />
+                <button className="sidebar-collapsed-action-btn" title="Create Room" onClick={() => setIsCreateRoomOpen(true)}>
+                  <Plus size={14} />
+                </button>
+              </div>
+            )}
+
+            {rooms.length === 0 ? (
+              !isSidebarCollapsed ? (
+                <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
+                  No rooms yet. Be the first to create one!
+                </div>
+              ) : null
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: isSidebarCollapsed ? "6px" : "3px" }}>
                 {rooms.map(room => {
                   const isActive = viewMode === "chat" && activeTab.type === "room" && activeTab.id === room.slug;
                   const isMod = isCurrentUserModerator(room);
-                  return (
+                  return !isSidebarCollapsed ? (
                     <div key={room.slug} className={`nav-item ${isActive ? "active" : ""}`}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, overflow: "hidden" }} onClick={() => selectTab("room", room.slug, room)}>
                         {room.picture ? (
@@ -1084,6 +1160,21 @@ export default function App() {
                         </button>
                       )}
                     </div>
+                  ) : (
+                    <div
+                      key={room.slug}
+                      className={`nav-item collapsed-nav-item ${isActive ? "active" : ""}`}
+                      onClick={() => selectTab("room", room.slug, room)}
+                      title={`# ${room.title}${isMod ? " (Moderator)" : ""}`}
+                    >
+                      {room.picture ? (
+                        <img src={`${API_BASE}${room.picture}`} alt={room.title} className="collapsed-room-pic" />
+                      ) : (
+                        <div className="collapsed-room-hash">
+                          <Hash size={17} />
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -1092,20 +1183,26 @@ export default function App() {
 
           {/* Direct Messages */}
           <div>
-            <div className="section-label">
-              <span>Direct Messages</span>
-            </div>
-
-            {directConversations.length === 0 ? (
-              <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
-                No active chats. Add friends from <strong>Explore</strong> to chat!
+            {!isSidebarCollapsed ? (
+              <div className="section-label">
+                <span>Direct Messages</span>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              <div className="sidebar-collapsed-section-divider" title="Direct Messages" style={{ margin: "10px auto 6px" }} />
+            )}
+
+            {directConversations.length === 0 ? (
+              !isSidebarCollapsed ? (
+                <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
+                  No active chats. Add friends from <strong>Explore</strong> to chat!
+                </div>
+              ) : null
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: isSidebarCollapsed ? "6px" : "3px" }}>
                 {directConversations.map(u => {
                   const isActive = viewMode === "chat" && activeTab.type === "direct" && activeTab.id === u.id;
                   const isOnline = onlineUserIds.has(u.id);
-                  return (
+                  return !isSidebarCollapsed ? (
                     <div key={u.id} className={`nav-item ${isActive ? "active" : ""}`} onClick={() => selectTab("direct", u.id, u)}>
                       <div className="user-avatar" onClick={e => { e.stopPropagation(); openUserProfile(u.id); }}>
                         <img src={avatarSrc(u)} alt={u.name} />
@@ -1121,6 +1218,18 @@ export default function App() {
                         </span>
                       )}
                     </div>
+                  ) : (
+                    <div
+                      key={u.id}
+                      className={`nav-item collapsed-nav-item ${isActive ? "active" : ""}`}
+                      onClick={() => selectTab("direct", u.id, u)}
+                      title={`${u.name} (@${u.username})${u.gender ? ` • ${u.gender}` : ""}`}
+                    >
+                      <div className="user-avatar" onClick={e => { e.stopPropagation(); openUserProfile(u.id); }}>
+                        <img src={avatarSrc(u)} alt={u.name} />
+                        <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -1130,24 +1239,48 @@ export default function App() {
 
         {/* User Profile Bar */}
         <div className="user-profile-bar">
-          <div className="profile-info" onClick={() => openUserProfile(currentUser.id, pendingRequestsCount > 0 ? "requests" : "profile")}>
-            <div className="user-avatar" style={{ position: "relative" }}>
-              <img src={avatarSrc(currentUser)} alt={currentUser.name} />
-              <span className="status-dot online" />
-              {pendingRequestsCount > 0 && (
-                <span className="badge-count" style={{ position: "absolute", top: -4, right: -4, fontSize: "0.62rem", padding: "1px 5px" }}>
-                  {pendingRequestsCount}
-                </span>
-              )}
+          {!isSidebarCollapsed ? (
+            <>
+              <div className="profile-info" onClick={() => openUserProfile(currentUser.id, pendingRequestsCount > 0 ? "requests" : "profile")}>
+                <div className="user-avatar" style={{ position: "relative" }}>
+                  <img src={avatarSrc(currentUser)} alt={currentUser.name} />
+                  <span className="status-dot online" />
+                  {pendingRequestsCount > 0 && (
+                    <span className="badge-count" style={{ position: "absolute", top: -4, right: -4, fontSize: "0.62rem", padding: "1px 5px" }}>
+                      {pendingRequestsCount}
+                    </span>
+                  )}
+                </div>
+                <div className="profile-details">
+                  <span className="profile-name">{currentUser.name}</span>
+                  <span className="profile-handle">@{currentUser.username}</span>
+                </div>
+              </div>
+              <button className="btn-icon" title="Log Out" onClick={handleLogout}>
+                <LogOut size={17} />
+              </button>
+            </>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", width: "100%" }}>
+              <div
+                className="user-avatar"
+                style={{ position: "relative", width: 38, height: 38 }}
+                onClick={() => openUserProfile(currentUser.id, pendingRequestsCount > 0 ? "requests" : "profile")}
+                title={`Your Profile: ${currentUser.name} (@${currentUser.username})`}
+              >
+                <img src={avatarSrc(currentUser)} alt={currentUser.name} />
+                <span className="status-dot online" />
+                {pendingRequestsCount > 0 && (
+                  <span className="badge-count" style={{ position: "absolute", top: -4, right: -4, fontSize: "0.62rem", padding: "1px 5px" }}>
+                    {pendingRequestsCount}
+                  </span>
+                )}
+              </div>
+              <button className="btn-icon" title="Log Out" onClick={handleLogout}>
+                <LogOut size={16} />
+              </button>
             </div>
-            <div className="profile-details">
-              <span className="profile-name">{currentUser.name}</span>
-              <span className="profile-handle">@{currentUser.username}</span>
-            </div>
-          </div>
-          <button className="btn-icon" title="Log Out" onClick={handleLogout}>
-            <LogOut size={17} />
-          </button>
+          )}
         </div>
       </aside>
 
@@ -1256,31 +1389,52 @@ export default function App() {
           </div>
         </main>
       ) : viewMode === "mate_chat" ? (
-        <main className="chat-stage mate-chat-stage">
+        <main className="chat-stage">
           {/* Header */}
-          <header className="chat-header mate-chat-header">
+          <header className="chat-header">
             <div className="header-title-box">
-              <div className="mate-avatar-header">
-                <span style={{ fontSize: "1.8rem" }}>
-                  {ANIMAL_EMOJIS[mateConversationData?.partner_nickname] || "🐾"}
-                </span>
+              <div
+                className="user-avatar"
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.45rem",
+                  background: "linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(168, 85, 247, 0.25))",
+                  border: "1px solid rgba(168, 85, 247, 0.4)",
+                  boxShadow: "0 0 12px rgba(168, 85, 247, 0.3)"
+                }}
+              >
+                {ANIMAL_EMOJIS[mateConversationData?.partner_nickname] || "🐾"}
               </div>
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <h2 style={{ fontSize: "1.15rem", fontWeight: 700 }}>
-                    {mateConversationData?.partner_nickname || "Anonymous Mate"}
-                  </h2>
-                  <span className="mate-anon-badge">ANONYMOUS MATE</span>
-                </div>
-                <div className="header-topic" style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>
+                <h2>
+                  {mateConversationData?.partner_nickname || "Anonymous Mate"}
+                  <span className="mate-anon-tag" style={{ marginLeft: "8px" }}>
+                    ANONYMOUS MATE
+                  </span>
+                </h2>
+                <div className="header-topic">
                   You: {mateConversationData?.my_nickname ? `${ANIMAL_EMOJIS[mateConversationData?.my_nickname] || "🐾"} ${mateConversationData?.my_nickname}` : "Anonymous"}
-                  {mateConversationData?.mutual_interest && " · Mutual Friends"}
+                  {mateConversationData?.mutual_interest ? " · Mutual Friends" : ""}
                 </div>
               </div>
             </div>
 
-            {/* Header Actions */}
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              {mateConversationData?.mutual_interest && mateConversationData?.partner_user_id && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ fontSize: "0.82rem", padding: "7px 14px" }}
+                  onClick={() => openUserProfile(mateConversationData.partner_user_id)}
+                >
+                  <UserCheck size={14} /> View Profile
+                </button>
+              )}
+
               <button
                 type="button"
                 className={`btn-interested ${mateConversationData?.my_interest ? "active" : ""}`}
@@ -1288,10 +1442,10 @@ export default function App() {
                 onClick={handleExpressInterest}
                 title={mateConversationData?.my_interest ? "You expressed interest!" : "Express interest in this mate"}
               >
-                <Heart size={15} fill={mateConversationData?.my_interest ? "currentColor" : "none"} />
+                <Heart size={14} fill={mateConversationData?.my_interest ? "currentColor" : "none"} />
                 <span>
                   {mateConversationData?.mutual_interest
-                    ? "Connected! 🎉"
+                    ? "Friends! 🎉"
                     : mateConversationData?.my_interest
                     ? "Interested ✓"
                     : "Interested"}
@@ -1304,7 +1458,7 @@ export default function App() {
                 onClick={handleExitMateConversation}
                 title="Exit anonymous conversation"
               >
-                <LogOut size={15} />
+                <LogOut size={14} />
                 <span>Exit</span>
               </button>
             </div>
@@ -1340,12 +1494,14 @@ export default function App() {
           {/* Participant Left Banner */}
           {mateConversationData?.has_left && (
             <div className="mate-banner-left">
-              <AlertCircle size={18} />
-              <span>The other user has left the conversation.</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <AlertCircle size={18} />
+                <span>The other user has left the conversation.</span>
+              </div>
               <button
                 type="button"
                 className="btn-secondary"
-                style={{ marginLeft: "auto", padding: "4px 12px", fontSize: "0.8rem" }}
+                style={{ marginLeft: "auto", padding: "5px 14px", fontSize: "0.8rem" }}
                 onClick={handleExitMateConversation}
               >
                 Return to Mate
@@ -1353,55 +1509,51 @@ export default function App() {
             </div>
           )}
 
-          {/* Messages Scroll Area */}
-          <div className="messages-area">
+          {/* Messages Feed */}
+          <div className="messages-feed">
             {mateMessages.length === 0 ? (
-              <div className="messages-empty" style={{ margin: "auto", textAlign: "center", color: "var(--text-dim)" }}>
-                <span style={{ fontSize: "3rem", display: "block", marginBottom: "10px" }}>
+              <div style={{ margin: "auto", textAlign: "center", padding: "40px", color: "var(--text-dim)" }}>
+                <span style={{ fontSize: "3rem", display: "block", marginBottom: "12px" }}>
                   {ANIMAL_EMOJIS[mateConversationData?.partner_nickname] || "💬"}
                 </span>
-                <p style={{ fontWeight: 600, fontSize: "1.05rem", color: "#fff" }}>
+                <p style={{ fontSize: "1.1rem", fontWeight: 700, color: "#fff", marginBottom: "6px" }}>
                   You're paired with {mateConversationData?.partner_nickname}!
                 </p>
-                <p style={{ fontSize: "0.85rem", marginTop: "4px" }}>
-                  Say hi, share thoughts, or discuss your shared interests.
+                <p style={{ fontSize: "0.88rem" }}>
+                  Say hello, share thoughts, or discuss your shared interests.
                 </p>
               </div>
             ) : (
               mateMessages.map(msg => {
-                const isMe = msg.sender_nickname === mateConversationData?.my_nickname;
+                const isOutgoing = msg.sender_nickname === mateConversationData?.my_nickname;
+                const time = msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+                const emoji = ANIMAL_EMOJIS[msg.sender_nickname] || "🐾";
                 return (
-                  <div
-                    key={msg.id}
-                    className={`message-bubble-wrapper ${isMe ? "me" : "other"}`}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: isMe ? "flex-end" : "flex-start",
-                      margin: "6px 0"
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
-                      <span style={{ fontSize: "0.78rem", fontWeight: 700, color: isMe ? "var(--accent-primary)" : "var(--accent-teal)" }}>
-                        {ANIMAL_EMOJIS[msg.sender_nickname] || "🐾"} {msg.sender_nickname}
-                      </span>
-                      <span style={{ fontSize: "0.68rem", color: "var(--text-dim)" }}>
-                        {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </div>
+                  <div key={msg.id || Math.random()} className={`message-card ${isOutgoing ? "outgoing" : ""}`}>
                     <div
-                      className={`message-bubble ${isMe ? "bubble-me" : "bubble-other"}`}
+                      className="user-avatar"
                       style={{
-                        maxWidth: "70%",
-                        padding: "10px 14px",
-                        borderRadius: "14px",
-                        background: isMe ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "var(--bg-input)",
-                        color: "#fff",
-                        fontSize: "0.92rem",
-                        wordBreak: "break-word"
+                        width: "36px",
+                        height: "36px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "1.3rem",
+                        background: isOutgoing ? "rgba(99, 102, 241, 0.18)" : "rgba(16, 185, 129, 0.15)",
+                        border: isOutgoing ? "1px solid rgba(99, 102, 241, 0.35)" : "1px solid rgba(16, 185, 129, 0.3)"
                       }}
+                      title={msg.sender_nickname}
                     >
-                      {msg.content}
+                      {emoji}
+                    </div>
+                    <div className="msg-bubble">
+                      <div className="msg-header">
+                        <span className="msg-sender" style={{ cursor: "default" }}>
+                          {isOutgoing ? "You" : msg.sender_nickname}
+                        </span>
+                        <span className="msg-time">{time}</span>
+                      </div>
+                      <div className="msg-text">{msg.content}</div>
                     </div>
                   </div>
                 );
@@ -1410,32 +1562,33 @@ export default function App() {
             <div ref={mateMessagesEndRef} />
           </div>
 
-          {/* Typing status */}
-          {mateTypingStatus && (
-            <div style={{ padding: "0 18px 4px", fontSize: "0.75rem", color: "var(--text-dim)", fontStyle: "italic" }}>
-              {mateTypingStatus}
-            </div>
-          )}
+          {/* Typing Bar */}
+          <div className="typing-bar">
+            {mateTypingStatus && <span>{mateTypingStatus}</span>}
+          </div>
 
-          {/* Message Input */}
-          <form className="message-form" onSubmit={handleSendMateMessage}>
-            <input
-              type="text"
-              className="chat-input"
-              placeholder={mateConversationData?.has_left ? "Conversation ended." : "Type a message..."}
-              value={mateInputMessage}
-              disabled={mateConversationData?.has_left}
-              onChange={handleMateInputChange}
-              maxLength={1000}
-            />
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={!mateInputMessage.trim() || mateConversationData?.has_left}
-            >
-              <Send size={16} />
-            </button>
-          </form>
+          {/* Chat Input Container */}
+          <div className="chat-input-container">
+            <form className="chat-form" onSubmit={handleSendMateMessage}>
+              <input
+                type="text"
+                className="chat-input"
+                placeholder={mateConversationData?.has_left ? "Conversation ended." : `Message ${mateConversationData?.partner_nickname || "mate"}...`}
+                value={mateInputMessage}
+                disabled={mateConversationData?.has_left}
+                onChange={handleMateInputChange}
+                maxLength={1000}
+              />
+              <button
+                type="submit"
+                className="btn-send"
+                disabled={!mateInputMessage.trim() || mateConversationData?.has_left}
+                title="Send"
+              >
+                <Send size={16} />
+              </button>
+            </form>
+          </div>
         </main>
       ) : viewMode === "explore" ? (
         <main className="explore-stage">

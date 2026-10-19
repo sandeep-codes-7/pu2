@@ -21,6 +21,12 @@
   backdrop-filter: blur(20px);
   position: relative;
   z-index: 20;
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar.collapsed {
+  width: 76px;
+  min-width: 76px;
 }
 
 .brand-header {
@@ -1326,6 +1332,153 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+}
+
+/* ==========================================================================
+   COLLAPSIBLE SIDEBAR (DISCORD STYLE)
+   ========================================================================== */
+.sidebar.collapsed .brand-header {
+  padding: 16px 8px;
+  justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-scroll {
+  padding: 14px 6px;
+  gap: 16px;
+  align-items: center;
+  overflow-x: hidden;
+}
+
+.sidebar.collapsed .nav-tab-group {
+  flex-direction: column;
+  padding: 0;
+  gap: 8px;
+  width: 100%;
+  align-items: center;
+}
+
+.sidebar.collapsed .nav-tab-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 12px;
+  position: relative;
+}
+
+.sidebar.collapsed .nav-tab-btn span {
+  display: none;
+}
+
+.sidebar.collapsed .nav-tab-btn svg {
+  margin: 0;
+}
+
+.sidebar-collapsed-section-divider {
+  width: 32px;
+  height: 2px;
+  background: var(--border-subtle);
+  margin: 6px auto;
+  border-radius: 2px;
+}
+
+.sidebar-collapsed-action-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed var(--border-subtle);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin: 0 auto 6px;
+  transition: all 0.15s;
+}
+
+.sidebar-collapsed-action-btn:hover {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  border-style: solid;
+}
+
+.collapsed-nav-item {
+  width: 46px !important;
+  height: 46px !important;
+  padding: 0 !important;
+  justify-content: center !important;
+  align-items: center !important;
+  border-radius: 12px !important;
+  margin: 2px auto !important;
+  position: relative;
+  border: 1px solid transparent !important;
+}
+
+.collapsed-nav-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.collapsed-nav-item.active {
+  background: rgba(99, 102, 241, 0.18) !important;
+  border-color: rgba(99, 102, 241, 0.4) !important;
+}
+
+.collapsed-nav-item .user-avatar {
+  width: 38px;
+  height: 38px;
+}
+
+.collapsed-room-pic {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.collapsed-room-hash {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  transition: all 0.15s;
+}
+
+.collapsed-nav-item:hover .collapsed-room-hash {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.collapsed-nav-item.active .collapsed-room-hash {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+}
+
+.sidebar.collapsed .collapsed-nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 25%;
+  height: 50%;
+  width: 4px;
+  background: var(--accent-primary);
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 8px var(--accent-primary);
+}
+
+.sidebar.collapsed .user-profile-bar {
+  padding: 12px 6px;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
 }
 
 
