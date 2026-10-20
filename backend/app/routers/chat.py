@@ -20,11 +20,12 @@ from app.schemas.schemas import (
     AddRoomMemberPayload, RemoveRoomMemberPayload
 )
 from app.dependencies.auth import get_current_user
+from app.config import settings
 
 router = APIRouter(prefix="/api", tags=["chat_rest"])
 
 # Upload directories
-UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads"
+UPLOADS_DIR = Path(settings.UPLOAD_DIR)
 AVATAR_DIR = UPLOADS_DIR / "avatars"
 ROOM_IMG_DIR = UPLOADS_DIR / "rooms"
 AVATAR_DIR.mkdir(parents=True, exist_ok=True)

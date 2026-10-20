@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # Frontend URL for CORS
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+    # Uploads Directory (configured via env or defaults to project root / uploads)
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "uploads"))
+
     class Config:
         extra = "ignore"
 

@@ -67,13 +67,18 @@ async def google_auth(payload: GoogleAuthRequest, db: AsyncSession = Depends(get
         await db.commit()
         await db.refresh(user)
     else:
-        # Update avatar/name if changed
-        if picture and user.avatar != picture:
+        # Only populate avatar or name if they are not already set.
+        # This prevents Google OAuth from wiping out the user's customized display name or custom uploaded avatar.
+        updated = False
+        if not user.avatar and picture:
             user.avatar = picture
-        if name and user.name != name:
+            updated = True
+        if not user.name and name:
             user.name = name
-        await db.commit()
-        await db.refresh(user)
+            updated = True
+        if updated:
+            await db.commit()
+            await db.refresh(user)
 
     token = create_access_token({"sub": user.id, "email": user.email})
     return {

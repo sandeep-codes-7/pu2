@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/pairup.db
+      - UPLOAD_DIR=/app/uploads
       - SECRET_KEY=${SECRET_KEY:-pairup-production-jwt-secret-key-change-me}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
@@ -14,6 +15,7 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
     volumes:
       - pairup-data:/app/data
+      - pairup-uploads:/app/uploads
     expose:
       - "8080"
     healthcheck:
@@ -38,3 +40,5 @@ services:
 volumes:
   pairup-data:
     name: pairup_sqlite_data
+  pairup-uploads:
+    name: pairup_uploads_data

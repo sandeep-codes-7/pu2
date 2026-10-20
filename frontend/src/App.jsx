@@ -140,7 +140,7 @@ export default function App() {
     fetch(`${API_BASE}/api/auth/config`)
       .then(r => r.json())
       .then(d => setGoogleClientId(d.google_client_id))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -227,7 +227,7 @@ export default function App() {
 
   const handleLogout = async () => {
     if (token) {
-      try { await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }); } catch (e) {}
+      try { await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }); } catch (e) { }
     }
     if (wsRef.current) wsRef.current.close();
     setToken(""); setCurrentUser(null);
@@ -246,7 +246,7 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/rooms`);
       if (res.ok) setRooms(await res.json());
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const refreshDirectConversations = async () => {
@@ -254,7 +254,7 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/direct-conversations`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) setDirectConversations(await res.json());
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const loadExploreUsers = async (query = "") => {
@@ -263,7 +263,7 @@ export default function App() {
       const url = query ? `${API_BASE}/api/explore-users?query=${encodeURIComponent(query)}` : `${API_BASE}/api/explore-users`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) setExploreUsersList(await res.json());
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const refreshPendingCount = useCallback(async () => {
@@ -274,7 +274,7 @@ export default function App() {
         const list = await res.json();
         setPendingRequestsCount(list.length);
       }
-    } catch (e) {}
+    } catch (e) { }
   }, [token]);
 
   useEffect(() => {
@@ -306,7 +306,7 @@ export default function App() {
         const mData = await mRes.json();
         setMateMessages(mData);
       }
-    } catch (e) {}
+    } catch (e) { }
   }, [token]);
 
   // ──────────────────────────────────────────────────────────────
@@ -397,7 +397,7 @@ export default function App() {
             setTypingUsers(prev => { const n = { ...prev }; delete n[data.user_id]; return n; });
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     };
 
     return () => ws.close();
@@ -437,7 +437,7 @@ export default function App() {
           fetch(`${API_BASE}/api/mate/queue/cancel`, {
             method: "POST",
             headers: authHeaders()
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
     };
@@ -453,22 +453,22 @@ export default function App() {
       fetch(`${API_BASE}/api/mate/queue/status`, {
         headers: { Authorization: `Bearer ${token}` }
       })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (!d) return;
-        if (d.status === "searching") {
-          const expTime = parseExpirationDate(d.expires_at);
-          const initialSec = expTime ? Math.max(0, Math.floor((expTime - Date.now()) / 1000)) : 300;
-          setMateRemainingSeconds(initialSec);
-          setMateStatus("searching");
-          setMateExpiresAt(d.expires_at);
-        } else if (d.status === "matched" && d.conversation_id) {
-          setMateStatus("matched");
-          setMateConversationId(d.conversation_id);
-          loadMateConversation(d.conversation_id);
-        }
-      })
-      .catch(() => {});
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (!d) return;
+          if (d.status === "searching") {
+            const expTime = parseExpirationDate(d.expires_at);
+            const initialSec = expTime ? Math.max(0, Math.floor((expTime - Date.now()) / 1000)) : 300;
+            setMateRemainingSeconds(initialSec);
+            setMateStatus("searching");
+            setMateExpiresAt(d.expires_at);
+          } else if (d.status === "matched" && d.conversation_id) {
+            setMateStatus("matched");
+            setMateConversationId(d.conversation_id);
+            loadMateConversation(d.conversation_id);
+          }
+        })
+        .catch(() => { });
     }
   }, [token, currentUser, loadMateConversation, parseExpirationDate]);
 
@@ -491,12 +491,12 @@ export default function App() {
       try {
         const res = await fetch(`${API_BASE}/api/rooms/${id}/messages`);
         if (res.ok) setMessages(await res.json());
-      } catch (e) {}
+      } catch (e) { }
     } else {
       try {
         const res = await fetch(`${API_BASE}/api/direct/${id}/messages`, { headers: { Authorization: `Bearer ${token}` } });
         if (res.ok) setMessages(await res.json());
-      } catch (e) {}
+      } catch (e) { }
     }
   };
 
@@ -553,7 +553,7 @@ export default function App() {
           setPendingRequestsCount(data.pending_requests?.length || 0);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const handleSaveProfile = async (e) => {
@@ -651,7 +651,7 @@ export default function App() {
         refreshPendingCount();
         if (viewMode === "explore") loadExploreUsers(searchQuery);
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
   // ──────────────────────────────────────────────────────────────
@@ -806,7 +806,7 @@ export default function App() {
         method: "POST",
         headers: authHeaders()
       });
-    } catch (e) {}
+    } catch (e) { }
 
     setMateConversationId(null);
     setMateConversationData(null);
@@ -925,7 +925,7 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/explore-users?query=${encodeURIComponent(q)}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) setAddMemberResults(await res.json());
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const handleAddMember = async (userId) => {
@@ -1105,7 +1105,7 @@ export default function App() {
             {!isSidebarCollapsed && (
               <>
                 <span>Mate</span>
-                <span className="mate-sparkle-badge">NEW</span>
+                {/* <span className="mate-sparkle-badge">Coming Soon!</span> */}
               </>
             )}
           </button>
@@ -1322,9 +1322,9 @@ export default function App() {
                     </>
                   ) : (
                     <>
-                      <Flame size={38} className="mate-flame-icon" />
-                      <span className="mate-btn-text">Try Mate</span>
-                      <span className="mate-btn-sub">1-on-1 Anonymous</span>
+                      <Flame size={25} className="mate-flame-icon" /><br />
+                      <span className="mate-btn-text">Find your Mate</span>
+                      {/* <span className="mate-btn-sub">1-on-1 Anonymous</span> */}
                     </>
                   )}
                 </span>
@@ -1447,8 +1447,8 @@ export default function App() {
                   {mateConversationData?.mutual_interest
                     ? "Friends! 🎉"
                     : mateConversationData?.my_interest
-                    ? "Interested ✓"
-                    : "Interested"}
+                      ? "Interested ✓"
+                      : "Interested"}
                 </span>
               </button>
 
