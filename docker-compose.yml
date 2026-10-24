@@ -31,35 +31,14 @@ services:
       dockerfile: Dockerfile
     container_name: pairup-frontend
     restart: unless-stopped
-    expose:
-      - "80"
+    ports:
+      - "80:80"
     depends_on:
       backend:
         condition: service_healthy
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: pairup-caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    environment:
-      - DOMAIN=${DOMAIN:-pairup.cc}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    depends_on:
-      - frontend
 
 volumes:
   pairup-data:
     name: pairup_sqlite_data
   pairup-uploads:
     name: pairup_uploads_data
-  caddy-data:
-    name: pairup_caddy_data
-  caddy-config:
-    name: pairup_caddy_config
