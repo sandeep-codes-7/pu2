@@ -11,8 +11,8 @@ services:
       - SECRET_KEY=${SECRET_KEY:-pairup-production-jwt-secret-key-change-me}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost/auth/callback}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-https://pairup.cc/auth/callback}
+      - FRONTEND_URL=${FRONTEND_URL:-https://pairup.cc}
     volumes:
       - pairup-data:/app/data
       - pairup-uploads:/app/uploads
@@ -31,14 +31,35 @@ services:
       dockerfile: Dockerfile
     container_name: pairup-frontend
     restart: unless-stopped
-    ports:
-      - "80:80"
+    expose:
+      - "80"
     depends_on:
       backend:
         condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: pairup-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN:-pairup.cc}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - frontend
 
 volumes:
   pairup-data:
     name: pairup_sqlite_data
   pairup-uploads:
     name: pairup_uploads_data
+  caddy-data:
+    name: pairup_caddy_data
+  caddy-config:
+    name: pairup_caddy_config

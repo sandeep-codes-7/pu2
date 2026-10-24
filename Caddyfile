@@ -1,0 +1,28 @@
+# Caddyfile for pairup.cc with automatic Let's Encrypt SSL and HTTP->HTTPS redirection
+{$DOMAIN:pairup.cc} {
+    # Proxy all traffic to the frontend Nginx container (which also proxies /api/ and /ws/ to backend)
+    reverse_proxy frontend:80 {
+        # WebSocket support headers
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto https
+    }
+
+    # Enable modern gzip & zstd compression
+    encode gzip zstd
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Logging
+    log {
+        output stdout
+        format console
+    }
+}
