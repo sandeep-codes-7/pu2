@@ -4,7 +4,7 @@ import {
   Sparkles, Zap, Shield, Users, MessageSquare, ArrowRight,
   Heart, CheckCircle2, Lock, Flame, Info, ChevronDown, Check,
   HelpCircle, Compass, UserCheck, LogIn, ExternalLink, Globe,
-  Hash, Crown, X, RefreshCw, Smile, ArrowUpRight
+  Hash, Crown, X, RefreshCw, Smile, ArrowUpRight, Sun, Moon
 } from 'lucide-react';
 
 const RANDOM_GUEST_NAMES = [
@@ -33,7 +33,9 @@ export default function LandingPage({
   authError,
   loginNotice,
   showAuthModal,
-  setShowAuthModal
+  setShowAuthModal,
+  theme,
+  toggleTheme
 }) {
   // Interactive Live Demo states
   const [heroWidgetTab, setHeroWidgetTab] = useState("pass"); // "pass" | "mate"
@@ -99,6 +101,17 @@ export default function LandingPage({
           </nav>
 
           <div className="landing-nav-actions">
+            {toggleTheme && (
+              <button
+                type="button"
+                className="btn-icon-sm"
+                onClick={toggleTheme}
+                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                style={{ width: "36px", height: "36px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}
+              >
+                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+            )}
             {isLoggedIn ? (
               <button
                 type="button"
@@ -138,8 +151,8 @@ export default function LandingPage({
         <div className="landing-hero-content">
           <div className="landing-pill-badge">
             <span className="landing-pill-dot" />
-            <Sparkles size={14} color="var(--accent-glow)" />
-            <span>Next-Gen Real-Time Chat & Anonymous Connections</span>
+            <MessageSquare size={13} />
+            <span>Simple real-time chat & anonymous matchmaking</span>
           </div>
 
           <h1 className="landing-hero-title">
@@ -171,7 +184,7 @@ export default function LandingPage({
                   <span>Enter with Instant Pass (No Signup)</span>
                 </button>
                 <a href="#mate" className="landing-hero-cta-secondary">
-                  <Sparkles size={18} />
+                  <Users size={17} />
                   <span>Discover Mate Matchmaking</span>
                 </a>
               </>
@@ -179,10 +192,10 @@ export default function LandingPage({
           </div>
 
           <div className="landing-trust-strip">
-            <div className="trust-item"><CheckCircle2 size={15} color="var(--accent-green)" /> 100% Free & Open</div>
-            <div className="trust-item"><CheckCircle2 size={15} color="var(--accent-green)" /> No Email or Password Required</div>
-            <div className="trust-item"><CheckCircle2 size={15} color="var(--accent-green)" /> Ephemeral & Privacy-First</div>
-            <div className="trust-item"><CheckCircle2 size={15} color="var(--accent-green)" /> Real-Time WebSocket Delivery</div>
+            <div className="trust-item"><CheckCircle2 size={15} /> 100% Free & Open</div>
+            <div className="trust-item"><CheckCircle2 size={15} /> No Email or Password Required</div>
+            <div className="trust-item"><CheckCircle2 size={15} /> Ephemeral & Privacy-First</div>
+            <div className="trust-item"><CheckCircle2 size={15} /> Real-Time WebSocket Delivery</div>
           </div>
 
           {/* ── INTERACTIVE HERO WIDGET ── */}
@@ -201,7 +214,7 @@ export default function LandingPage({
                   className={`widget-tab ${heroWidgetTab === "mate" ? "active" : ""}`}
                   onClick={() => setHeroWidgetTab("mate")}
                 >
-                  <Sparkles size={15} /> Mate Match Simulator
+                  <Users size={15} /> Mate Match Simulator
                 </button>
               </div>
               <span className="widget-live-tag">Interactive Preview</span>
@@ -285,7 +298,7 @@ export default function LandingPage({
                         className="btn-primary widget-submit-btn"
                         onClick={handleRunSimulation}
                       >
-                        <Sparkles size={16} /> Start Match Simulation
+                        <Users size={16} /> Start Match Simulation
                       </button>
                     </>
                   )}
@@ -293,7 +306,7 @@ export default function LandingPage({
                   {simStep === "matching" && (
                     <div className="widget-sim-matching">
                       <div className="sim-pulse-spinner">
-                        <Sparkles size={28} className="mate-spin-icon" color="var(--accent-glow)" />
+                        <RefreshCw size={24} className="mate-spin-icon" />
                       </div>
                       <h4>Matching your passions...</h4>
                       <p>Searching for someone into {selectedInterests.slice(0, 2).join(" & ")}...</p>
@@ -347,7 +360,7 @@ export default function LandingPage({
       <section id="instant-pass" className="landing-section">
         <div className="landing-section-header">
           <div className="landing-section-badge">
-            <Zap size={14} color="var(--accent-glow)" />
+            <Zap size={14} />
             <span>Instant Pass Feature</span>
           </div>
           <h2 className="landing-section-title">Zero Friction. <span className="brand-gradient">Instant Access.</span></h2>
@@ -358,32 +371,32 @@ export default function LandingPage({
 
         <div className="landing-cards-grid">
           <div className="landing-feature-card">
-            <div className="card-icon-wrap" style={{ background: "rgba(56, 189, 248, 0.15)", color: "#38bdf8" }}>
-              <Zap size={24} />
+            <div className="card-icon-wrap">
+              <Zap size={22} />
             </div>
             <h3>1-Click Entry</h3>
             <p>Pick any unique username and you're immediately in the app. No email, no password, and zero confirmation delays.</p>
           </div>
 
           <div className="landing-feature-card">
-            <div className="card-icon-wrap" style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981" }}>
-              <Shield size={24} />
+            <div className="card-icon-wrap">
+              <Shield size={22} />
             </div>
             <h3>Privacy Shield</h3>
             <p>Instant Pass guest accounts are completely temporary. When your session ends or you log out, your guest identity is cleared.</p>
           </div>
 
           <div className="landing-feature-card">
-            <div className="card-icon-wrap" style={{ background: "rgba(168, 85, 247, 0.15)", color: "#c084fc" }}>
-              <Users size={24} />
+            <div className="card-icon-wrap">
+              <Users size={22} />
             </div>
             <h3>Full Public Chat Access</h3>
             <p>Participate in public community rooms, read discussions, view room rosters, and experience real-time conversations.</p>
           </div>
 
           <div className="landing-feature-card">
-            <div className="card-icon-wrap" style={{ background: "rgba(245, 158, 11, 0.15)", color: "#fbbf24" }}>
-              <ArrowUpRight size={24} />
+            <div className="card-icon-wrap">
+              <ArrowUpRight size={22} />
             </div>
             <h3>Upgrade Anytime</h3>
             <p>Ready to save permanent friends and unlock private direct messaging? Upgrade seamlessly with Google Login at any time.</p>
@@ -394,8 +407,8 @@ export default function LandingPage({
       {/* ── SPOTLIGHT 2: MATE (ANONYMOUS MATCHMAKING) ── */}
       <section id="mate" className="landing-section">
         <div className="landing-section-header">
-          <div className="landing-section-badge" style={{ background: "rgba(236, 72, 153, 0.15)", color: "#f472b6" }}>
-            <Sparkles size={14} color="#f472b6" />
+          <div className="landing-section-badge">
+            <Heart size={14} />
             <span>Mate Matchmaking</span>
           </div>
           <h2 className="landing-section-title">Anonymous Chat. <span className="brand-gradient">Real Connections.</span></h2>
@@ -435,7 +448,7 @@ export default function LandingPage({
       <section id="rooms" className="landing-section">
         <div className="landing-section-header">
           <div className="landing-section-badge">
-            <Hash size={14} color="var(--accent-primary)" />
+            <Hash size={14} />
             <span>Community Spaces</span>
           </div>
           <h2 className="landing-section-title">Join Public Rooms. <span className="brand-gradient">Build Communities.</span></h2>
@@ -493,15 +506,15 @@ export default function LandingPage({
 
         <div className="room-feature-highlights">
           <div className="highlight-item">
-            <Crown size={18} color="var(--accent-gold)" />
+            <Crown size={18} />
             <span>Prime Moderator & 5 Mod Slots for safe room governance</span>
           </div>
           <div className="highlight-item">
-            <Info size={18} color="var(--accent-primary)" />
+            <Info size={18} />
             <span>Dedicated "View Info" page with moderator & participant rosters</span>
           </div>
           <div className="highlight-item">
-            <Users size={18} color="var(--accent-green)" />
+            <Users size={18} />
             <span>WhatsApp-style unread counter badges for incoming messages</span>
           </div>
         </div>
@@ -531,28 +544,28 @@ export default function LandingPage({
               </tr>
               <tr>
                 <td>Public Chat Rooms</td>
-                <td><Check size={18} color="var(--accent-green)" /> Full Access</td>
-                <td><Check size={18} color="var(--accent-green)" /> Full Access</td>
+                <td><Check size={16} /> Full Access</td>
+                <td><Check size={16} /> Full Access</td>
               </tr>
               <tr>
                 <td>Room Info & Participants</td>
-                <td><Check size={18} color="var(--accent-green)" /> View all rosters</td>
-                <td><Check size={18} color="var(--accent-green)" /> View all rosters</td>
+                <td><Check size={16} /> View all rosters</td>
+                <td><Check size={16} /> View all rosters</td>
               </tr>
               <tr>
                 <td>Create & Moderate Rooms</td>
                 <td><span className="tag-muted">Guest only</span></td>
-                <td><Check size={18} color="var(--accent-green)" /> Prime Moderator</td>
+                <td><Check size={16} /> Prime Moderator</td>
               </tr>
               <tr>
                 <td>Mate Anonymous Matchmaking</td>
                 <td><span className="tag-muted">Read-only preview</span></td>
-                <td><Check size={18} color="var(--accent-green)" /> Full Matching & Friends Unlock</td>
+                <td><Check size={16} /> Full Matching & Friends Unlock</td>
               </tr>
               <tr>
                 <td>Persistent Direct Messaging</td>
                 <td><span className="tag-muted">Session only</span></td>
-                <td><Check size={18} color="var(--accent-green)" /> Permanent Friendships</td>
+                <td><Check size={16} /> Permanent Friendships</td>
               </tr>
               <tr>
                 <td>Privacy & Data Retention</td>
@@ -568,7 +581,7 @@ export default function LandingPage({
       <section id="faq" className="landing-section">
         <div className="landing-section-header">
           <div className="landing-section-badge">
-            <HelpCircle size={14} color="var(--accent-glow)" />
+            <HelpCircle size={14} />
             <span>Common Questions</span>
           </div>
           <h2 className="landing-section-title">Frequently Asked Questions</h2>
@@ -716,7 +729,7 @@ export default function LandingPage({
             </div>
 
             {loginNotice && (
-              <div className="error-banner" style={{ background: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "#fca5a5", marginBottom: "14px" }}>
+              <div className="error-banner" style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", marginBottom: "14px" }}>
                 {loginNotice}
               </div>
             )}

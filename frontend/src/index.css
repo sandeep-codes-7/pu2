@@ -1,49 +1,94 @@
 /* ==========================================================================
    PairUP Design System
-   Sleek Obsidian & Electric Indigo / Violet Neon Theme
-   Clean, Modern, Immersive, Production-Ready
+   Minimalist Gray & White Human Theme
+   Clean, Editorial, Focused, High-Legibility
    ========================================================================== */
 
 :root {
-  --font-display: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-body: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  /* Theme: Electric Indigo & Obsidian Glass */
-  --bg-deep: #0a0b10;
-  --bg-dark: #12141d;
-  --bg-sidebar: #0f1118;
-  --bg-card: rgba(22, 25, 38, 0.82);
-  --bg-card-hover: rgba(30, 35, 54, 0.9);
-  --bg-input: rgba(24, 28, 42, 0.95);
+  /* Theme: Minimalist Gray & White */
+  --bg-deep: #ffffff;
+  --bg-dark: #fafafa;
+  --bg-sidebar: #f8f9fa;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f4f4f5;
+  --bg-input: #f4f4f5;
 
-  --accent-primary: #6366f1;       /* Indigo */
-  --accent-secondary: #a855f7;     /* Violet */
-  --accent-glow: #38bdf8;          /* Sky Blue */
-  --accent-pink: #ec4899;          /* Rose Pink */
-  --accent-green: #10b981;         /* Emerald */
-  --accent-amber: #f59e0b;         /* Amber */
+  /* Monochromatic human accents */
+  --accent-primary: #18181b;       /* Charcoal / Carbon */
+  --accent-secondary: #3f3f46;     /* Slate */
+  --accent-glow: #71717a;          /* Muted Zinc */
+  --accent-pink: #18181b;          /* Neutral */
+  --accent-green: #15803d;         /* Understated Forest Green for online/active status */
+  --accent-amber: #b45309;         /* Understated Warm Amber for prime */
+  --accent-gold: #b45309;
 
-  --grad-primary: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);
-  --grad-subtle: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%);
-  --grad-header: linear-gradient(90deg, #818cf8 0%, #c084fc 100%);
+  /* Clean solids (No heavy gradients) */
+  --grad-primary: #18181b;
+  --grad-subtle: #f4f4f5;
+  --grad-header: #18181b;
 
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --text-dim: #64748b;
+  /* Typography */
+  --text-main: #09090b;            /* High-contrast ink */
+  --text-muted: #52525b;           /* Readable neutral body */
+  --text-dim: #71717a;             /* Subtle captions / handles */
 
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-accent: rgba(99, 102, 241, 0.4);
-  --border-focus: rgba(168, 85, 247, 0.6);
+  /* Hairline borders */
+  --border-subtle: #e4e4e7;
+  --border-accent: #d4d4d8;
+  --border-focus: #18181b;
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
   --radius-full: 9999px;
 
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
-  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.25);
+  /* Soft, natural human shadows (no neon colored glow) */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-glow: none;
+}
+
+/* ==========================================================================
+   Dark Gray & White Minimalist Theme Tokens
+   ========================================================================== */
+[data-theme="dark"] {
+  --bg-deep: #09090b;              /* Dark canvas */
+  --bg-dark: #121214;              /* Deep zinc surface */
+  --bg-sidebar: #101012;           /* Subtle dark sidebar */
+  --bg-card: #18181b;              /* Elevated card */
+  --bg-card-hover: #222226;        /* Subtle hover state */
+  --bg-input: #18181b;             /* Charcoal input background */
+
+  /* Monochromatic accents */
+  --accent-primary: #ffffff;       /* Pure white key accent */
+  --accent-secondary: #e4e4e7;     /* Light zinc */
+  --accent-glow: #a1a1aa;          /* Muted zinc */
+  --accent-pink: #ffffff;
+  --accent-green: #22c55e;         /* Clean status indicator */
+  --accent-amber: #f59e0b;
+  --accent-gold: #f59e0b;
+
+  --grad-primary: #ffffff;
+  --grad-subtle: #1c1c20;
+  --grad-header: #ffffff;
+
+  /* Typography */
+  --text-main: #f4f4f5;            /* Crisp off-white */
+  --text-muted: #a1a1aa;           /* Soft readable body */
+  --text-dim: #71717a;             /* Subtle captions / handles */
+
+  /* Hairline dark borders */
+  --border-subtle: #27272a;
+  --border-accent: #3f3f46;
+  --border-focus: #ffffff;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --shadow-glow: none;
 }
 
 * {
@@ -65,11 +110,7 @@ body {
   background-color: var(--bg-deep);
   color: var(--text-main);
   font-family: var(--font-body);
-  background-image: 
-    radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 45%),
-    radial-gradient(circle at 85% 85%, rgba(217, 70, 239, 0.09) 0%, transparent 50%),
-    radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.05) 0%, transparent 60%);
-  background-attachment: fixed;
+  background-image: none;
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
 }
@@ -81,47 +122,46 @@ body {
   position: fixed;
   inset: 0;
   overflow: hidden;
+  background-color: var(--bg-deep);
 }
 
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: #d4d4d8;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.4);
+  background: #a1a1aa;
 }
 
-/* Glass Panels */
+/* Clean Panels */
 .glass-panel {
   background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
 }
 
-/* Clean Buttons */
+/* Minimalist Clean Buttons */
 .btn-primary {
-  background: var(--grad-primary);
-  color: #fff;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.92rem;
-  padding: 10px 20px;
+  background: #18181b;
+  color: #ffffff;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 9px 18px;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.35);
+  border: 1px solid #18181b;
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.15s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -129,93 +169,152 @@ body {
 }
 
 .btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
-  filter: brightness(1.08);
+  background: #27272a;
+  border-color: #27272a;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  filter: none;
+  transform: none;
 }
 
 .btn-primary:active {
-  transform: translateY(1px);
+  background: #09090b;
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-main);
+  background: #ffffff;
+  color: #18181b;
   font-family: var(--font-body);
-  font-weight: 600;
+  font-weight: 500;
   font-size: 0.88rem;
   padding: 8px 16px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid #e4e4e7;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+  color: #09090b;
 }
 
 .btn-danger {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  background: #fef2f2;
+  color: #b91c1c;
   font-weight: 600;
   font-size: 0.85rem;
   padding: 6px 14px;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid #fecaca;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
 }
 .btn-danger:hover {
-  background: rgba(239, 68, 68, 0.3);
+  background: #fee2e2;
+  border-color: #f87171;
 }
 
-/* Gender Pills */
+/* Minimalist Gender Pills */
 .gender-badge {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 500;
   border-radius: var(--radius-full);
   text-transform: capitalize;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
+  background: #f4f4f5;
+  color: #52525b;
+  border: 1px solid #e4e4e7;
 }
 
-.gender-badge.male {
-  background: rgba(56, 189, 248, 0.15);
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.3);
-}
-
-.gender-badge.female {
-  background: rgba(236, 72, 153, 0.15);
-  color: #f472b6;
-  border: 1px solid rgba(236, 72, 153, 0.3);
-}
-
-.gender-badge.other {
-  background: rgba(168, 85, 247, 0.15);
-  color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.3);
-}
-
+.gender-badge.male,
+.gender-badge.female,
+.gender-badge.other,
 .gender-badge.neutral {
-  background: rgba(148, 163, 184, 0.12);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: #f4f4f5;
+  color: #52525b;
+  border: 1px solid #e4e4e7;
 }
 
-/* Title Gradient */
+/* Brand Title - Solid & Clean, No Gradient */
 .brand-gradient {
-  background: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #f472b6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  background: none;
+  -webkit-background-clip: unset;
+  -webkit-text-fill-color: initial;
+  color: #09090b;
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
+
+/* ==========================================================================
+   Dark Theme Component Overrides
+   ========================================================================== */
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #27272a;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+[data-theme="dark"] .brand-gradient {
+  color: #f4f4f5;
+}
+
+[data-theme="dark"] .btn-primary {
+  background: #ffffff;
+  color: #09090b;
+  border-color: #ffffff;
+}
+
+[data-theme="dark"] .btn-primary:hover {
+  background: #f4f4f5;
+  border-color: #f4f4f5;
+  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .btn-primary:active {
+  background: #e4e4e7;
+}
+
+[data-theme="dark"] .btn-secondary {
+  background: #18181b;
+  color: #f4f4f5;
+  border-color: #27272a;
+}
+
+[data-theme="dark"] .btn-secondary:hover {
+  background: #222226;
+  border-color: #3f3f46;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .btn-danger {
+  background: #271416;
+  color: #f87171;
+  border-color: #451a1d;
+}
+
+[data-theme="dark"] .btn-danger:hover {
+  background: #36171b;
+  border-color: #7f1d1d;
+}
+
+[data-theme="dark"] .gender-badge,
+[data-theme="dark"] .gender-badge.male,
+[data-theme="dark"] .gender-badge.female,
+[data-theme="dark"] .gender-badge.other,
+[data-theme="dark"] .gender-badge.neutral {
+  background: #1c1c20;
+  color: #d4d4d8;
+  border: 1px solid #27272a;
+}
+

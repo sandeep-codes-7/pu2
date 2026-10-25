@@ -7,7 +7,7 @@ import {
   Shield, ShieldPlus, ShieldOff, Trash2, Settings, Camera,
   Upload, Image, ChevronDown, Crown, UserMinus, User as UserIcon,
   Heart, AlertCircle, CheckCircle2, Loader2, Flame,
-  PanelLeftClose, PanelLeftOpen, ArrowLeft, Info
+  PanelLeftClose, PanelLeftOpen, ArrowLeft, Info, Sun, Moon
 } from 'lucide-react';
 
 const API_BASE = window.location.origin.includes(":5173")
@@ -27,7 +27,21 @@ const ANIMAL_EMOJIS = {
   Penguin: "🐧",
   Dolphin: "🐬",
   Tiger: "🐯",
-  Sparrow: "🐦"
+  Sparrow: "🐦",
+  Bear: "🐻",
+  Wolf: "🐺",
+  Deer: "🦌",
+  Falcon: "🦅",
+  Owl: "🦉",
+  Lion: "🦁",
+  Hedgehog: "🦔",
+  Cheetah: "🐆",
+  Beaver: "🦫",
+  Kangaroo: "🦘",
+  Badger: "🦡",
+  Lynx: "🐱",
+  Seal: "🦭",
+  Raccoon: "🦝"
 };
 
 export default function App() {
@@ -50,6 +64,24 @@ export default function App() {
   // Snackbar Notification
   const [snackbar, setSnackbar] = useState(null);
   const snackbarTimerRef = useRef(null);
+
+  // Theme (Light / Dark Minimalist Gray & White)
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem("pu_theme") || "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("pu_theme", theme);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute("content", theme === "dark" ? "#09090b" : "#ffffff");
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === "dark" ? "light" : "dark"));
+  };
 
   // Navigation & Layout
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -1157,6 +1189,8 @@ export default function App() {
           loginNotice={loginNotice}
           showAuthModal={showAuthModal}
           setShowAuthModal={setShowAuthModal}
+          theme={theme}
+          toggleTheme={toggleTheme}
         />
         {snackbar && (
           <div className="snackbar-container">
@@ -1195,14 +1229,23 @@ export default function App() {
                 <h1 className="brand-gradient">PairUP</h1>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <button
+                  type="button"
+                  className="sidebar-theme-toggle"
+                  title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                  onClick={toggleTheme}
+                  aria-label="Toggle theme"
+                >
+                  {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                </button>
                 <button className="btn-section-action" title="About PairUP & Features" onClick={() => setShowLandingPage(true)}>
                   <Info size={17} />
                 </button>
                 <button className="btn-section-action" title="Explore Friends" onClick={() => { setViewMode("explore"); loadExploreUsers(searchQuery); }}>
-                  <Users size={18} />
+                  <Users size={17} />
                 </button>
                 <button className="btn-section-action sidebar-collapse-btn" title="Collapse sidebar" onClick={toggleSidebar}>
-                  <PanelLeftClose size={18} />
+                  <PanelLeftClose size={17} />
                 </button>
               </div>
             </>
@@ -1210,6 +1253,15 @@ export default function App() {
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", gap: "8px" }}>
               <button className="btn-section-action sidebar-collapse-btn" title="Expand sidebar" onClick={toggleSidebar}>
                 <PanelLeftOpen size={19} />
+              </button>
+              <button
+                type="button"
+                className="sidebar-theme-toggle"
+                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                onClick={toggleTheme}
+                aria-label="Toggle theme"
+              >
+                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               </button>
               <button className="btn-section-action" title="About PairUP" onClick={() => setShowLandingPage(true)}>
                 <Info size={17} />
@@ -1286,25 +1338,35 @@ export default function App() {
                   const isMod = isCurrentUserModerator(room);
                   const roomUnread = unreadCounts[`room_${room.slug.toLowerCase()}`] || 0;
                   return !isSidebarCollapsed ? (
-                    <div key={room.slug} className={`nav-item ${isActive ? "active" : ""}`}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, overflow: "hidden" }} onClick={() => selectTab("room", room.slug, room)}>
+                    <div
+                      key={room.slug}
+                      className={`nav-item ${isActive ? "active" : ""}`}
+                      onClick={() => selectTab("room", room.slug, room)}
+                      title={`# ${room.title}`}
+                    >
+                      <div className="nav-item-hash-box">
                         {room.picture ? (
-                          <img src={`${API_BASE}${room.picture}`} alt={room.title} style={{ width: 18, height: 18, borderRadius: "4px", objectFit: "cover" }} />
+                          <img src={`${API_BASE}${room.picture}`} alt={room.title} className="nav-item-room-pic" />
                         ) : (
-                          <Hash size={17} color={isActive ? "var(--accent-primary)" : "var(--text-dim)"} />
+                          <Hash size={15} />
                         )}
-                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {room.title}
-                        </span>
-                        {isMod && <Crown size={11} color="var(--accent-gold)" title="Moderator" />}
                       </div>
+                      <span className="nav-item-title">
+                        {room.title}
+                      </span>
+                      {isMod && <Crown size={12} className="mod-crown-icon" title="Moderator" />}
                       {roomUnread > 0 && (
                         <span className="unread-counter-badge" title={`${roomUnread} unread message${roomUnread > 1 ? "s" : ""}`}>
                           {roomUnread > 99 ? "99+" : roomUnread}
                         </span>
                       )}
                       {isMod && (
-                        <button className="btn-icon-sm" title="Room Settings" onClick={e => { e.stopPropagation(); openRoomSettings(room); }}>
+                        <button
+                          type="button"
+                          className="btn-icon-sm"
+                          title="Room Settings"
+                          onClick={e => { e.stopPropagation(); openRoomSettings(room); }}
+                        >
                           <Settings size={13} />
                         </button>
                       )}
@@ -1358,14 +1420,19 @@ export default function App() {
                   const isOnline = onlineUserIds.has(u.id);
                   const directUnread = unreadCounts[`direct_${u.id}`] || 0;
                   return !isSidebarCollapsed ? (
-                    <div key={u.id} className={`nav-item ${isActive ? "active" : ""}`} onClick={() => selectTab("direct", u.id, u)}>
+                    <div
+                      key={u.id}
+                      className={`nav-item ${isActive ? "active" : ""}`}
+                      onClick={() => selectTab("direct", u.id, u)}
+                      title={`${u.name} (@${u.username})`}
+                    >
                       <div className="user-avatar">
                         <img src={avatarSrc(u)} alt={u.name} />
                         <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
                       </div>
-                      <div style={{ flex: 1, overflow: "hidden" }}>
-                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.88rem", fontWeight: 600 }}>{u.name}</div>
-                        <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
+                      <div className="nav-item-text-col">
+                        <div className="nav-item-name">{u.name}</div>
+                        <div className="nav-item-handle">@{u.username}</div>
                       </div>
                       {u.gender && (
                         <span className={getGenderBadgeClass(u.gender)} style={{ fontSize: "0.62rem", padding: "1px 5px" }}>
@@ -1469,11 +1536,21 @@ export default function App() {
                 @{profileData.user.username}
               </div>
             </div>
-            {viewingProfileId === currentUser?.id && !isEditingProfile && (
-              <button className="btn-secondary" style={{ padding: "6px 14px", fontSize: "0.82rem" }} onClick={() => setIsEditingProfile(true)}>
-                <Edit3 size={14} /> Edit Profile
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <button
+                type="button"
+                className="btn-icon"
+                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                onClick={toggleTheme}
+              >
+                {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
               </button>
-            )}
+              {viewingProfileId === currentUser?.id && !isEditingProfile && (
+                <button className="btn-secondary" style={{ padding: "6px 14px", fontSize: "0.82rem" }} onClick={() => setIsEditingProfile(true)}>
+                  <Edit3 size={14} /> Edit Profile
+                </button>
+              )}
+            </div>
           </header>
 
           <div className="page-content-scroll">
@@ -1536,7 +1613,7 @@ export default function App() {
                       <input ref={avatarFileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) handleAvatarUpload(e.target.files[0]); }} />
                     </div>
                     <div>
-                      <h4 style={{ fontSize: "1.2rem", fontWeight: 700, color: "#fff" }}>{profileData.user.name}</h4>
+                      <h4 style={{ fontSize: "1.2rem", fontWeight: 700, color: "var(--text-main)" }}>{profileData.user.name}</h4>
                       <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginBottom: "6px" }}>@{profileData.user.username}</div>
                       <span className={getGenderBadgeClass(profileData.user.gender)}>{profileData.user.gender || "Prefer not to say"}</span>
                     </div>
@@ -1577,11 +1654,27 @@ export default function App() {
                     <div>
                       <div className="profile-field-group">
                         <span className="profile-field-label">Bio</span>
-                        <div className="profile-field-val">{profileData.user.bio || "No bio yet."}</div>
+                        <div
+                          className="profile-field-val"
+                          style={{
+                            color: profileData.user.bio ? "var(--text-main)" : "var(--text-dim)",
+                            fontStyle: profileData.user.bio ? "normal" : "italic"
+                          }}
+                        >
+                          {profileData.user.bio || "No bio added yet."}
+                        </div>
                       </div>
                       <div className="profile-field-group">
                         <span className="profile-field-label">Interests</span>
-                        <div className="profile-field-val">{profileData.user.interests || "No interests specified."}</div>
+                        <div
+                          className="profile-field-val"
+                          style={{
+                            color: profileData.user.interests ? "var(--text-main)" : "var(--text-dim)",
+                            fontStyle: profileData.user.interests ? "normal" : "italic"
+                          }}
+                        >
+                          {profileData.user.interests || "No interests specified."}
+                        </div>
                       </div>
 
                       {/* Action Buttons */}
@@ -1615,6 +1708,27 @@ export default function App() {
                           </>
                         )}
                       </div>
+
+                      {/* Theme switcher preference row inside own profile */}
+                      {viewingProfileId === currentUser.id && (
+                        <div style={{ marginTop: "16px", padding: "12px 14px", background: "var(--bg-input)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div>
+                            <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--text-main)" }}>Appearance</div>
+                            <div style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>
+                              {theme === "dark" ? "Dark Gray & White Theme" : "Light Gray & White Theme"}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ padding: "6px 12px", fontSize: "0.82rem" }}
+                            onClick={toggleTheme}
+                          >
+                            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+                            <span>{theme === "dark" ? "Switch to Light" : "Switch to Dark"}</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -2190,9 +2304,8 @@ export default function App() {
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: "1.45rem",
-                  background: "linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(168, 85, 247, 0.25))",
-                  border: "1px solid rgba(168, 85, 247, 0.4)",
-                  boxShadow: "0 0 12px rgba(168, 85, 247, 0.3)"
+                  background: "var(--bg-input)",
+                  border: "1px solid var(--border-subtle)"
                 }}
               >
                 {ANIMAL_EMOJIS[mateConversationData?.partner_nickname] || "🐾"}
@@ -2240,6 +2353,15 @@ export default function App() {
 
               <button
                 type="button"
+                className="btn-icon-sm"
+                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                onClick={toggleTheme}
+              >
+                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+
+              <button
+                type="button"
                 className="btn-exit"
                 onClick={handleExitMateConversation}
                 title="Exit anonymous conversation"
@@ -2254,12 +2376,12 @@ export default function App() {
           {mateConversationData?.mutual_interest && (
             <div className="mate-banner-mutual">
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <Sparkles size={20} color="var(--accent-gold)" />
+                <Heart size={20} color="#18181b" />
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: "0.92rem", color: "#fff" }}>
+                  <div style={{ fontWeight: 700, fontSize: "0.92rem", color: "var(--text-main)" }}>
                     Mutual Interest Confirmed! 🎉
                   </div>
-                  <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.8)" }}>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
                     You and {mateConversationData.partner_nickname} liked each other and are now reciprocal friends on PairUP!
                   </div>
                 </div>
@@ -2300,9 +2422,9 @@ export default function App() {
             {mateMessages.length === 0 ? (
               <div style={{ margin: "auto", textAlign: "center", padding: "40px", color: "var(--text-dim)" }}>
                 <span style={{ fontSize: "3rem", display: "block", marginBottom: "12px" }}>
-                  {ANIMAL_EMOJIS[mateConversationData?.partner_nickname] || "💬"}
+                  {ANIMAL_EMOJIS[mateConversationData?.partner_nickname] || "🐾"}
                 </span>
-                <p style={{ fontSize: "1.1rem", fontWeight: 700, color: "#fff", marginBottom: "6px" }}>
+                <p style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-main)", marginBottom: "6px" }}>
                   You're paired with {mateConversationData?.partner_nickname}!
                 </p>
                 <p style={{ fontSize: "0.88rem" }}>
@@ -2325,8 +2447,8 @@ export default function App() {
                         alignItems: "center",
                         justifyContent: "center",
                         fontSize: "1.3rem",
-                        background: isOutgoing ? "rgba(99, 102, 241, 0.18)" : "rgba(16, 185, 129, 0.15)",
-                        border: isOutgoing ? "1px solid rgba(99, 102, 241, 0.35)" : "1px solid rgba(16, 185, 129, 0.3)"
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--border-subtle)"
                       }}
                       title={msg.sender_nickname}
                     >
@@ -2551,6 +2673,14 @@ export default function App() {
                   <UserIcon size={14} /> <span className="header-btn-text">View Profile</span>
                 </button>
               )}
+              <button
+                type="button"
+                className="btn-icon-sm"
+                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                onClick={toggleTheme}
+              >
+                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
             </div>
           </header>
 
