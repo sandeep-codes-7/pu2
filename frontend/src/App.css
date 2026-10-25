@@ -14,6 +14,10 @@
 .sidebar {
   width: 320px;
   min-width: 290px;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-subtle);
   display: flex;
@@ -51,11 +55,14 @@
 
 .sidebar-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px 14px;
   display: flex;
   flex-direction: column;
   gap: 22px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .section-label {
@@ -405,8 +412,22 @@
 /* Explore Friends View */
 .explore-stage {
   flex: 1;
-  padding: 26px 32px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-deep);
+  height: 100vh;
+  height: 100dvh;
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  width: 100%;
+}
+
+.explore-content-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  padding: 24px 28px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -1060,14 +1081,41 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 24px;
-  max-width: 680px;
-  margin: 0 auto;
+  background: var(--bg-deep);
+  height: 100vh;
+  height: 100dvh;
+  position: relative;
+  overflow: hidden;
   width: 100%;
-  overflow-y: auto;
-  text-align: center;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mate-page-card {
+  max-width: 620px;
+  width: 100%;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px;
+}
+
+.mate-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  color: #d8b4fe;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 5px 14px;
+  border-radius: var(--radius-full);
+  margin-bottom: 14px;
+  letter-spacing: 0.03em;
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.15);
 }
 
 .mate-hero {
@@ -1076,10 +1124,10 @@
 
 .mate-title {
   font-family: var(--font-display);
-  font-size: 2.8rem;
+  font-size: 2.6rem;
   font-weight: 800;
   letter-spacing: -0.03em;
-  background: linear-gradient(135deg, #fff 20%, #a855f7 60%, #38bdf8 100%);
+  background: linear-gradient(135deg, #fff 25%, #c084fc 70%, #60a5fa 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   margin-bottom: 8px;
@@ -1087,10 +1135,10 @@
 
 .mate-subtitle {
   color: var(--text-muted);
-  font-size: 1.05rem;
+  font-size: 1rem;
   max-width: 480px;
   margin: 0 auto;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 /* Circular "Try Mate" Button */
@@ -1295,6 +1343,37 @@
   border-radius: var(--radius-full);
 }
 
+.mate-chip-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mate-countdown-card {
+  margin: 16px auto;
+  padding: 16px 24px;
+  background: rgba(2, 132, 199, 0.1);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 380px;
+  text-align: center;
+}
+
+.mate-countdown-timer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #38bdf8;
+  margin-top: 6px;
+}
+
 /* ==========================================================================
    MATE: CHATROOM UI
    ========================================================================== */
@@ -1436,19 +1515,20 @@
 
 .sidebar.collapsed .nav-tab-group {
   flex-direction: column;
-  padding: 0;
-  gap: 8px;
+  padding: 16px 0;
+  gap: 12px;
   width: 100%;
   align-items: center;
 }
 
 .sidebar.collapsed .nav-tab-btn {
-  width: 44px;
-  height: 44px;
-  padding: 0;
+  width: 48px;
+  height: 48px;
+  padding: 8px;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 14px;
   position: relative;
+  transition: all 0.2s ease;
 }
 
 .sidebar.collapsed .nav-tab-btn span {
@@ -1457,6 +1537,8 @@
 
 .sidebar.collapsed .nav-tab-btn svg {
   margin: 0;
+  width: 20px;
+  height: 20px;
 }
 
 .sidebar-collapsed-section-divider {
@@ -1564,4 +1646,261 @@
   flex-direction: column;
   gap: 8px;
   align-items: center;
+}
+
+/* Ensure clicking avatar in collapsed sidebar direct chat tile doesn't get captured separately */
+.collapsed-nav-item .user-avatar {
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   PAGE STAGE & BACK NAVIGATION BUTTON
+   ========================================================================== */
+.btn-back {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-back:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: var(--border-accent);
+  transform: translateX(-2px);
+}
+
+.page-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-deep);
+  height: 100vh;
+  height: 100dvh;
+  position: relative;
+  overflow: hidden;
+}
+
+.page-header {
+  padding: 16px 24px;
+  background: var(--bg-dark);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.page-content-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  -webkit-overflow-scrolling: touch;
+}
+
+.page-card {
+  max-width: 680px;
+  width: 100%;
+  margin: 0 auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+/* ==========================================================================
+   MATE RECTANGULAR BUTTON (WITH ROUNDED EDGES)
+   ========================================================================== */
+.mate-rect-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 28px;
+  min-width: 220px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.05rem;
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.mate-rect-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, #4f46e5, #9333ea);
+  box-shadow: 0 8px 28px rgba(168, 85, 247, 0.45), 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.mate-rect-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.mate-rect-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.mate-rect-btn.searching {
+  background: linear-gradient(135deg, #0284c7, #6366f1);
+  box-shadow: 0 0 24px rgba(14, 165, 233, 0.45);
+  animation: pulseRectButton 2s infinite ease-in-out;
+}
+
+@keyframes pulseRectButton {
+
+  0%,
+  100% {
+    box-shadow: 0 0 18px rgba(14, 165, 233, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 32px rgba(168, 85, 247, 0.65);
+  }
+}
+
+.mate-spin-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================================================
+   ROOM MANAGEMENT: ELASTIC SEARCH FOR MODERATORS
+   ========================================================================== */
+.mod-search-results {
+  margin-top: 10px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px;
+}
+
+.mod-search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+.mod-search-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-accent);
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN (MOBILE & DESKTOP)
+   ========================================================================== */
+@media (max-width: 768px) {
+  .app-container {
+    height: 100dvh !important;
+    overflow: hidden !important;
+    position: relative;
+  }
+
+  /* When a chat or subpage is open on mobile, show the stage full screen and hide sidebar */
+  .app-container.has-active-page .sidebar {
+    display: none !important;
+  }
+
+  .app-container.has-active-page .chat-stage,
+  .app-container.has-active-page .mate-stage,
+  .app-container.has-active-page .explore-stage,
+  .app-container.has-active-page .page-stage {
+    display: flex !important;
+    width: 100vw !important;
+    min-width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    flex: 1 1 100% !important;
+    z-index: 10;
+  }
+
+  /* When no chat/page is active on mobile, show sidebar full screen */
+  .app-container.no-active-page .sidebar {
+    display: flex !important;
+    width: 100vw !important;
+    min-width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    border-right: none;
+    z-index: 10;
+  }
+
+  .app-container.no-active-page .chat-stage,
+  .app-container.no-active-page .mate-stage,
+  .app-container.no-active-page .explore-stage,
+  .app-container.no-active-page .page-stage {
+    display: none !important;
+  }
+
+  .sidebar-collapse-toggle {
+    display: none !important;
+  }
+
+  .chat-header,
+  .page-header {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .header-title-box {
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .page-content-scroll {
+    padding: 14px 12px;
+  }
+
+  .page-card {
+    padding: 16px 14px;
+    border-radius: var(--radius-md);
+  }
+
+  .messages-container {
+    padding: 14px 12px;
+  }
+
+  .mate-content-box {
+    padding: 20px 14px;
+  }
+}
+
+@media (min-width: 769px) {
+
+  /* On desktop, sidebar is always visible side-by-side with chats */
+  .chat-stage .header-title-box .btn-back {
+    display: none;
+  }
 }

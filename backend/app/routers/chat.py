@@ -308,14 +308,22 @@ async def add_moderator(
     if not await _is_prime_moderator(db, room.id, current_user.id):
         raise HTTPException(status_code=403, detail="Only the prime moderator can add other moderators")
 
-    if payload.user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="You are already the prime moderator")
+    target = None
+    if payload.user_id and payload.user_id.strip():
+        res_u = await db.execute(select(User).filter(User.id == payload.user_id.strip()))
+        target = res_u.scalars().first()
+    elif payload.username and payload.username.strip():
+        clean_user = payload.username.strip().lstrip("@")
+        res_u = await db.execute(select(User).filter(User.username.ilike(clean_user)))
+        target = res_u.scalars().first()
+    else:
+        raise HTTPException(status_code=400, detail="User ID or username must be provided")
 
-    # Check target user exists
-    res_u = await db.execute(select(User).filter(User.id == payload.user_id))
-    target = res_u.scalars().first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if target.id == current_user.id:
+        raise HTTPException(status_code=400, detail="You are already the prime moderator")
 
     # Check max moderators (5 total)
     res_count = await db.execute(select(RoomModerator).filter(RoomModerator.room_id == room.id))
@@ -327,7 +335,7 @@ async def add_moderator(
     res_existing = await db.execute(
         select(RoomModerator).filter(
             RoomModerator.room_id == room.id,
-            RoomModerator.user_id == payload.user_id
+            RoomModerator.user_id == target.id
         )
     )
     if res_existing.scalars().first():
@@ -335,12 +343,12 @@ async def add_moderator(
 
     new_mod = RoomModerator(
         room_id=room.id,
-        user_id=payload.user_id,
+        user_id=target.id,
         is_prime=False
     )
     db.add(new_mod)
     await db.commit()
-    return {"status": "added", "message": f"{target.name} is now a moderator of #{room.slug}"}
+    return {"status": "added", "message": f"{target.name} is now a moderator of #{room.slug}", "user_id": target.id}
 
 
 @router.post("/rooms/{slug}/moderators/remove")

@@ -96,7 +96,8 @@ class ModeratorOut(BaseModel):
         from_attributes = True
 
 class AddModeratorPayload(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
+    username: Optional[str] = None
 
 class RemoveModeratorPayload(BaseModel):
     user_id: str

@@ -6,7 +6,7 @@ import {
   Shield, ShieldPlus, ShieldOff, Trash2, Settings, Camera,
   Upload, Image, ChevronDown, Crown, UserMinus, User as UserIcon,
   Heart, AlertCircle, CheckCircle2, Loader2, Flame,
-  PanelLeftClose, PanelLeftOpen
+  PanelLeftClose, PanelLeftOpen, ArrowLeft
 } from 'lucide-react';
 
 const API_BASE = window.location.origin.includes(":5173")
@@ -120,6 +120,9 @@ export default function App() {
   const [editRoomDesc, setEditRoomDesc] = useState("");
   const [roomSettingsTab, setRoomSettingsTab] = useState("info"); // "info" | "moderators" | "members"
   const [addModUserId, setAddModUserId] = useState("");
+  const [addModSearch, setAddModSearch] = useState("");
+  const [addModResults, setAddModResults] = useState([]);
+  const [isSearchingMods, setIsSearchingMods] = useState(false);
   const [addMemberSearch, setAddMemberSearch] = useState("");
   const [addMemberResults, setAddMemberResults] = useState([]);
   const [uploadingRoomPic, setUploadingRoomPic] = useState(false);
@@ -480,9 +483,10 @@ export default function App() {
   // ──────────────────────────────────────────────────────────────
   const selectTab = async (type, id, dataObj) => {
     setViewMode("chat");
+    setViewingProfileId(null);
+    setRoomSettingsOpen(false);
     setActiveTab({ type, id, data: dataObj });
     setMessages([]);
-    setRoomSettingsOpen(false);
 
     if (type === "room") {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -849,6 +853,9 @@ export default function App() {
     setEditRoomDesc(room.description || "");
     setRoomSettingsTab("info");
     setAddModUserId("");
+    setAddModSearch("");
+    setAddModResults([]);
+    setIsSearchingMods(false);
     setAddMemberSearch("");
     setAddMemberResults([]);
     setRoomSettingsOpen(true);
@@ -891,19 +898,62 @@ export default function App() {
     } catch (e) { alert("Network error"); }
   };
 
-  const handleAddModerator = async () => {
-    if (!addModUserId.trim() || !roomSettingsData) return;
+  const handleAddModerator = async (target) => {
+    if (!roomSettingsData) return;
+    let payload = {};
+    const val = typeof target === "string" ? target.trim() : (target?.id || addModSearch.trim());
+    if (!val) return;
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    payload = isUuid ? { user_id: val } : { username: val.replace(/^@/, "") };
+
     try {
       const res = await fetch(`${API_BASE}/api/rooms/${roomSettingsData.slug}/moderators/add`, {
-        method: "POST", headers: authHeaders(), body: JSON.stringify({ user_id: addModUserId.trim() })
+        method: "POST", headers: authHeaders(), body: JSON.stringify(payload)
       });
       const data = await res.json();
-      if (!res.ok) { alert(data.detail || "Failed"); return; }
+      if (!res.ok) {
+        showSnackbar(data.detail || "Failed to add moderator", "error");
+        return;
+      }
+      showSnackbar(data.message || "Moderator added successfully!", "success");
       // Refresh room data
       const rRes = await fetch(`${API_BASE}/api/rooms/${roomSettingsData.slug}`);
-      if (rRes.ok) { const updated = await rRes.json(); setRoomSettingsData(updated); setRooms(prev => prev.map(r => r.slug === updated.slug ? updated : r)); }
+      if (rRes.ok) {
+        const updated = await rRes.json();
+        setRoomSettingsData(updated);
+        setRooms(prev => prev.map(r => r.slug === updated.slug ? updated : r));
+      }
+      setAddModSearch("");
+      setAddModResults([]);
       setAddModUserId("");
-    } catch (e) { alert("Network error"); }
+    } catch (e) {
+      showSnackbar("Network error", "error");
+    }
+  };
+
+  const searchUsersForModerator = async (q) => {
+    setAddModSearch(q);
+    const clean = q.trim().replace(/^@/, "");
+    if (!clean) {
+      setAddModResults([]);
+      return;
+    }
+    setIsSearchingMods(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/explore-users?query=${encodeURIComponent(clean)}`, {
+        headers: authHeaders()
+      });
+      if (res.ok) {
+        const users = await res.json();
+        const existingModUserIds = new Set((roomSettingsData?.moderators || []).map(m => m.user_id));
+        setAddModResults(users.filter(u => !existingModUserIds.has(u.id) && u.id !== currentUser?.id));
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSearchingMods(false);
+    }
   };
 
   const handleRemoveModerator = async (userId) => {
@@ -1047,8 +1097,17 @@ export default function App() {
   // ══════════════════════════════════════════════════════════════
   // MAIN APP
   // ══════════════════════════════════════════════════════════════
+  const isPageActive = Boolean(
+    viewingProfileId ||
+    roomSettingsOpen ||
+    viewMode === "mate" ||
+    viewMode === "mate_chat" ||
+    viewMode === "explore" ||
+    activeTab.id
+  );
+
   return (
-    <div className="app-container">
+    <div className={`app-container ${isPageActive ? "has-active-page" : "no-active-page"}`}>
       {/* ── SIDEBAR ── */}
       <aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""}`}>
         <div className="brand-header">
@@ -1204,7 +1263,7 @@ export default function App() {
                   const isOnline = onlineUserIds.has(u.id);
                   return !isSidebarCollapsed ? (
                     <div key={u.id} className={`nav-item ${isActive ? "active" : ""}`} onClick={() => selectTab("direct", u.id, u)}>
-                      <div className="user-avatar" onClick={e => { e.stopPropagation(); openUserProfile(u.id); }}>
+                      <div className="user-avatar">
                         <img src={avatarSrc(u)} alt={u.name} />
                         <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
                       </div>
@@ -1225,7 +1284,7 @@ export default function App() {
                       onClick={() => selectTab("direct", u.id, u)}
                       title={`${u.name} (@${u.username})${u.gender ? ` • ${u.gender}` : ""}`}
                     >
-                      <div className="user-avatar" onClick={e => { e.stopPropagation(); openUserProfile(u.id); }}>
+                      <div className="user-avatar">
                         <img src={avatarSrc(u)} alt={u.name} />
                         <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
                       </div>
@@ -1284,106 +1343,602 @@ export default function App() {
         </div>
       </aside>
 
-      {/* ── MAIN STAGE ── */}
-      {viewMode === "mate" ? (
-        <main className="mate-stage">
-          <div className="mate-content-box">
-            <div style={{ textAlign: "center" }}>
-              <div className="mate-badge">
-                <Sparkles size={14} /> Anonymous Matchmaking
+      {/* ── MAIN STAGE / PAGES ── */}
+      {viewingProfileId && profileData ? (
+        <main className="page-stage profile-page-stage">
+          <header className="page-header">
+            <button
+              type="button"
+              className="btn-back"
+              onClick={() => { setViewingProfileId(null); setIsEditingProfile(false); }}
+              title="Back"
+            >
+              <ArrowLeft size={19} />
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>
+                {viewingProfileId === currentUser?.id ? "Your Profile" : "Profile"}
+              </h2>
+              <div style={{ fontSize: "0.74rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                @{profileData.user.username}
               </div>
-              <h2 className="mate-title brand-gradient">Find your mate</h2>
-              <p className="mate-subtitle">
-                Enter your interests, jump into the matchmaking pool, and connect anonymously with someone on your wavelength.
-              </p>
             </div>
+            {viewingProfileId === currentUser?.id && !isEditingProfile && (
+              <button className="btn-secondary" style={{ padding: "6px 14px", fontSize: "0.82rem" }} onClick={() => setIsEditingProfile(true)}>
+                <Edit3 size={14} /> Edit Profile
+              </button>
+            )}
+          </header>
 
-            {/* Center Circular Button */}
-            <div style={{ position: "relative", margin: "24px 0 12px 0", display: "flex", justifyContent: "center" }}>
-              {mateStatus === "searching" && <div className="mate-radar-pulse" />}
-              <button
-                type="button"
-                className={`mate-circle-btn ${mateStatus === "searching" ? "searching" : ""}`}
-                disabled={isSubmittingMatch}
-                onClick={mateStatus === "searching" ? handleCancelMatchmaking : handleStartMatchmaking}
-                title={mateStatus === "searching" ? "Click to cancel search" : "Start anonymous matchmaking"}
-              >
-                <span className="mate-circle-inner">
+          <div className="page-content-scroll">
+            <div className="page-card">
+              {viewingProfileId === currentUser.id && isEditingProfile ? (
+                /* ── Edit Own Profile ── */
+                <form onSubmit={handleSaveProfile} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                    <div style={{ position: "relative", width: "80px", height: "80px" }}>
+                      <img src={avatarSrc(currentUser)} alt="" style={{ width: "80px", height: "80px", borderRadius: "50%", objectFit: "cover", border: "3px solid var(--accent-primary)" }} />
+                      <button type="button" className="avatar-upload-btn" onClick={() => avatarFileRef.current?.click()} title="Upload Photo" disabled={uploadingAvatar}>
+                        <Camera size={14} />
+                      </button>
+                    </div>
+                    <input ref={avatarFileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) handleAvatarUpload(e.target.files[0]); }} />
+                    {uploadingAvatar && <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>Uploading...</span>}
+                  </div>
+
+                  <div className="profile-field-group">
+                    <label className="profile-field-label">Display Name</label>
+                    <input type="text" value={editName} onChange={e => setEditName(e.target.value)} required className="chat-input profile-field-val" />
+                  </div>
+                  <div className="profile-field-group">
+                    <label className="profile-field-label">Username</label>
+                    <input type="text" value={editUsername} onChange={e => setEditUsername(e.target.value)} required className="chat-input profile-field-val" />
+                  </div>
+                  <div className="profile-field-group">
+                    <label className="profile-field-label">Gender</label>
+                    <select value={editGender} onChange={e => setEditGender(e.target.value)} className="profile-field-val chat-input">
+                      <option value="Prefer not to say">Prefer not to say</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div className="profile-field-group">
+                    <label className="profile-field-label">Bio</label>
+                    <textarea rows={3} value={editBio} onChange={e => setEditBio(e.target.value)} className="chat-input profile-field-val" style={{ resize: "none" }} />
+                  </div>
+                  <div className="profile-field-group">
+                    <label className="profile-field-label">Interests</label>
+                    <input type="text" placeholder="e.g. Design, React, Gaming" value={editInterests} onChange={e => setEditInterests(e.target.value)} className="chat-input profile-field-val" />
+                  </div>
+                  <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
+                    <button type="submit" className="btn-primary" style={{ flex: 1 }}>Save Changes</button>
+                    <button type="button" className="btn-secondary" onClick={() => setIsEditingProfile(false)}>Cancel</button>
+                  </div>
+                </form>
+              ) : (
+                /* ── View Profile ── */
+                <div>
+                  <div className="profile-hero">
+                    <div className="profile-avatar-lg" style={{ position: "relative" }}>
+                      <img src={avatarSrc(profileData.user)} alt={profileData.user.name} />
+                      {viewingProfileId === currentUser.id && (
+                        <button type="button" className="avatar-upload-btn" onClick={() => avatarFileRef.current?.click()} title="Change Photo" disabled={uploadingAvatar}>
+                          <Camera size={14} />
+                        </button>
+                      )}
+                      <input ref={avatarFileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) handleAvatarUpload(e.target.files[0]); }} />
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: "1.2rem", fontWeight: 700, color: "#fff" }}>{profileData.user.name}</h4>
+                      <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginBottom: "6px" }}>@{profileData.user.username}</div>
+                      <span className={getGenderBadgeClass(profileData.user.gender)}>{profileData.user.gender || "Prefer not to say"}</span>
+                    </div>
+                  </div>
+
+                  {/* Profile Tabs */}
+                  <div className="profile-tabs">
+                    <button
+                      type="button"
+                      className={`profile-tab-btn ${profileTab === "profile" ? "active" : ""}`}
+                      onClick={() => setProfileTab("profile")}
+                    >
+                      <UserIcon size={14} /> Profile
+                    </button>
+                    <button
+                      type="button"
+                      className={`profile-tab-btn ${profileTab === "friends" ? "active" : ""}`}
+                      onClick={() => setProfileTab("friends")}
+                    >
+                      <Users size={14} /> Friends ({profileData.friends_count || 0})
+                    </button>
+                    {viewingProfileId === currentUser.id && (
+                      <button
+                        type="button"
+                        className={`profile-tab-btn ${profileTab === "requests" ? "active" : ""}`}
+                        onClick={() => setProfileTab("requests")}
+                      >
+                        <Clock size={14} /> Requests
+                        {profileData.pending_requests?.length > 0 && (
+                          <span className="badge-count">{profileData.pending_requests.length}</span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* TAB 1: Profile Info */}
+                  {profileTab === "profile" && (
+                    <div>
+                      <div className="profile-field-group">
+                        <span className="profile-field-label">Bio</span>
+                        <div className="profile-field-val">{profileData.user.bio || "No bio yet."}</div>
+                      </div>
+                      <div className="profile-field-group">
+                        <span className="profile-field-label">Interests</span>
+                        <div className="profile-field-val">{profileData.user.interests || "No interests specified."}</div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div style={{ marginTop: "20px", display: "flex", gap: "10px" }}>
+                        {viewingProfileId === currentUser.id ? (
+                          <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setIsEditingProfile(true)}>
+                            <Edit3 size={15} /> Edit Profile
+                          </button>
+                        ) : (
+                          <>
+                            {profileData.friendship_status === "accepted" ? (
+                              <button className="btn-primary" style={{ flex: 1 }} onClick={() => { setViewingProfileId(null); selectTab("direct", profileData.user.id, profileData.user); }}>
+                                <MessageSquare size={15} /> Chat
+                              </button>
+                            ) : profileData.friendship_status === "pending_sent" ? (
+                              <button className="btn-secondary" style={{ flex: 1 }} disabled><Clock size={15} /> Request Pending</button>
+                            ) : profileData.friendship_status === "pending_received" ? (
+                              <div style={{ display: "flex", gap: "8px", width: "100%" }}>
+                                <button className="btn-primary" style={{ flex: 1 }} onClick={() => handleRespondFriendRequest(profileData.user.friend_request_id, "accepted")}>
+                                  <Check size={14} /> Accept Request
+                                </button>
+                                <button className="btn-danger" style={{ flex: 1 }} onClick={() => handleRespondFriendRequest(profileData.user.friend_request_id, "ignored")}>
+                                  <X size={14} /> Ignore
+                                </button>
+                              </div>
+                            ) : (
+                              <button className="btn-primary" style={{ flex: 1 }} onClick={() => handleSendFriendRequest(profileData.user.id)}>
+                                <UserPlus size={15} /> Add Friend
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 2: Friends Tab */}
+                  {profileTab === "friends" && (
+                    <div>
+                      {profileData.friends.length === 0 ? (
+                        <div className="empty-requests-box">
+                          <Users size={36} style={{ opacity: 0.3, marginBottom: "8px" }} />
+                          <p style={{ fontWeight: 600 }}>No friends yet</p>
+                          <p style={{ fontSize: "0.82rem", color: "var(--text-dim)", marginTop: "4px" }}>
+                            Discover and add friends from the Explore section!
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="profile-friends-list">
+                          {profileData.friends.map(f => (
+                            <div key={f.id} className="friend-card-item">
+                              <div style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", flex: 1, overflow: "hidden" }} onClick={() => openUserProfile(f.id)}>
+                                <img src={avatarSrc(f)} alt={f.name} style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover" }} />
+                                <div style={{ overflow: "hidden" }}>
+                                  <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{f.name}</div>
+                                  <div style={{ fontSize: "0.74rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{f.username}</div>
+                                </div>
+                                {f.gender && (
+                                  <span className={getGenderBadgeClass(f.gender)} style={{ fontSize: "0.58rem", padding: "1px 5px" }}>
+                                    {f.gender}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ display: "flex", gap: "6px" }}>
+                                <button
+                                  className="btn-primary"
+                                  style={{ padding: "5px 12px", fontSize: "0.78rem" }}
+                                  onClick={() => { setViewingProfileId(null); selectTab("direct", f.id, f); }}
+                                >
+                                  <MessageSquare size={13} /> Chat
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* TAB 3: Requests Tab */}
+                  {viewingProfileId === currentUser.id && profileTab === "requests" && (
+                    <div>
+                      {!profileData.pending_requests || profileData.pending_requests.length === 0 ? (
+                        <div className="empty-requests-box">
+                          <UserCheck size={36} style={{ opacity: 0.3, marginBottom: "8px" }} />
+                          <p style={{ fontWeight: 600, fontSize: "0.95rem" }}>No Pending Requests</p>
+                          <p style={{ fontSize: "0.82rem", color: "var(--text-dim)", marginTop: "4px" }}>
+                            When someone sends you a friend request, it will appear here so you can accept or ignore it.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="profile-requests-list">
+                          {profileData.pending_requests.map(req => (
+                            <div key={req.id} className="request-card">
+                              <div className="request-user-info" onClick={() => openUserProfile(req.requester.id)}>
+                                <div className="user-avatar" style={{ width: 38, height: 38 }}>
+                                  <img src={avatarSrc(req.requester)} alt={req.requester.name} />
+                                </div>
+                                <div style={{ overflow: "hidden" }}>
+                                  <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                                    {req.requester.name}
+                                  </div>
+                                  <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                                    @{req.requester.username}
+                                  </div>
+                                  {req.requester.gender && (
+                                    <span className={getGenderBadgeClass(req.requester.gender)} style={{ fontSize: "0.58rem", padding: "1px 5px", marginTop: "2px", display: "inline-block" }}>
+                                      {req.requester.gender}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="request-actions">
+                                <button
+                                  className="btn-primary"
+                                  style={{ padding: "6px 12px", fontSize: "0.78rem", gap: "5px" }}
+                                  onClick={() => handleRespondFriendRequest(req.id, "accepted")}
+                                  title="Accept Friend Request"
+                                >
+                                  <Check size={13} /> Accept
+                                </button>
+                                <button
+                                  className="btn-danger"
+                                  style={{ padding: "6px 12px", fontSize: "0.78rem", gap: "5px" }}
+                                  onClick={() => handleRespondFriendRequest(req.id, "ignored")}
+                                  title="Ignore Friend Request"
+                                >
+                                  <X size={13} /> Ignore
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </main>
+      ) : roomSettingsOpen && roomSettingsData ? (
+        <main className="page-stage room-settings-page-stage">
+          <header className="page-header">
+            <button
+              type="button"
+              className="btn-back"
+              onClick={() => setRoomSettingsOpen(false)}
+              title="Back to Room"
+            >
+              <ArrowLeft size={19} />
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                <Settings size={18} /> Manage Room
+              </h2>
+              <div className="header-topic">#{roomSettingsData.slug} · {roomSettingsData.title}</div>
+            </div>
+          </header>
+
+          <div className="page-content-scroll">
+            <div className="page-card">
+              {/* Settings Tabs */}
+              <div className="settings-tabs">
+                {["info", "moderators", "members"].map(tab => (
+                  <button key={tab} className={`settings-tab ${roomSettingsTab === tab ? "active" : ""}`} onClick={() => setRoomSettingsTab(tab)}>
+                    {tab === "info" ? "Room Info" : tab === "moderators" ? "Moderators" : "Add Members"}
+                  </button>
+                ))}
+              </div>
+
+              {roomSettingsTab === "info" && (
+                <div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+                    <div style={{ position: "relative", width: "80px", height: "80px" }}>
+                      {roomSettingsData.picture ? (
+                        <img src={`${API_BASE}${roomSettingsData.picture}`} alt="" style={{ width: "80px", height: "80px", borderRadius: "12px", objectFit: "cover", border: "3px solid var(--accent-primary)" }} />
+                      ) : (
+                        <div style={{ width: "80px", height: "80px", borderRadius: "12px", background: "var(--bg-input)", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid var(--border-subtle)" }}>
+                          <Image size={28} color="var(--text-dim)" />
+                        </div>
+                      )}
+                      <button type="button" className="avatar-upload-btn" onClick={() => roomPicRef.current?.click()} title="Upload Room Picture" disabled={uploadingRoomPic}>
+                        <Camera size={14} />
+                      </button>
+                    </div>
+                    <input ref={roomPicRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) handleRoomPicUpload(e.target.files[0]); }} />
+                    {uploadingRoomPic && <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>Uploading...</span>}
+                    <span style={{ fontSize: "0.74rem", color: "var(--text-dim)" }}>Room picture</span>
+                  </div>
+
+                  <form onSubmit={handleSaveRoomInfo} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div>
+                      <label className="profile-field-label">Room Title</label>
+                      <input type="text" value={editRoomTitle} onChange={e => setEditRoomTitle(e.target.value)} required className="chat-input profile-field-val" style={{ width: "100%", marginTop: "4px" }} />
+                    </div>
+                    <div>
+                      <label className="profile-field-label">Description</label>
+                      <textarea rows={3} value={editRoomDesc} onChange={e => setEditRoomDesc(e.target.value)} className="chat-input profile-field-val" style={{ width: "100%", marginTop: "4px", resize: "none" }} placeholder="Describe what this room is about..." />
+                    </div>
+                    <button type="submit" className="btn-primary">Save Changes</button>
+                  </form>
+
+                  <div style={{ marginTop: "24px", borderTop: "1px solid var(--border-subtle)", paddingTop: "16px" }}>
+                    <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "10px" }}>
+                      <strong>Danger Zone</strong> — deleting the room is permanent and removes all messages.
+                    </p>
+                    <button className="btn-danger" onClick={handleDeleteRoom}>
+                      <Trash2 size={15} /> Delete Room
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {roomSettingsTab === "moderators" && (
+                <div>
+                  <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "14px" }}>
+                    A room can have up to 5 moderators (including prime). Only the prime moderator can add or remove others.
+                  </p>
+
+                  {/* Existing Moderators */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px" }}>
+                    {roomSettingsData.moderators?.map(mod => (
+                      <div key={mod.user_id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: "var(--bg-input)", borderRadius: "10px" }}>
+                        <img src={avatarSrc(mod)} alt={mod.name} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, fontSize: "0.88rem" }}>{mod.name}</div>
+                          <div style={{ fontSize: "0.74rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{mod.username}</div>
+                        </div>
+                        {mod.is_prime ? (
+                          <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.72rem", color: "var(--accent-gold)", fontWeight: 700 }}>
+                            <Crown size={12} /> Prime
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: "0.72rem", color: "var(--accent-primary)", fontWeight: 600 }}>Moderator</span>
+                        )}
+                        {!mod.is_prime && isCurrentUserPrimeModerator(roomSettingsData) && (
+                          <button className="btn-icon" style={{ color: "var(--color-danger)" }} title="Remove Moderator" onClick={() => handleRemoveModerator(mod.user_id)}>
+                            <ShieldOff size={15} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add Moderator — Elastic Search & Direct Username Input */}
+                  {isCurrentUserPrimeModerator(roomSettingsData) && (roomSettingsData.moderators?.length || 0) < 5 && (
+                    <div style={{ marginTop: "16px" }}>
+                      <label className="profile-field-label">Add Moderator by Username or Name</label>
+                      <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
+                        <div style={{ position: "relative", flex: 1 }}>
+                          <input
+                            type="text"
+                            placeholder="Type username (e.g. @sandeep) or full name..."
+                            value={addModSearch}
+                            onChange={e => searchUsersForModerator(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddModerator(addModSearch); } }}
+                            className="chat-input"
+                            style={{ width: "100%", paddingRight: isSearchingMods ? "34px" : "12px" }}
+                          />
+                          {isSearchingMods && (
+                            <Loader2 size={16} className="mate-spin-icon" style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--accent-primary)" }} />
+                          )}
+                        </div>
+                        <button className="btn-primary" onClick={() => handleAddModerator(addModSearch)} disabled={!addModSearch.trim()}>
+                          <ShieldPlus size={14} /> Add
+                        </button>
+                      </div>
+                      <p style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginTop: "6px" }}>
+                        Search users instantly by username or full name. Max 5 moderators total.
+                      </p>
+
+                      {/* Elastic Search Results */}
+                      {addModResults.length > 0 && (
+                        <div className="mod-search-results">
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginBottom: "6px", fontWeight: 600 }}>
+                            Matching users ({addModResults.length}):
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "180px", overflowY: "auto" }}>
+                            {addModResults.map(u => (
+                              <div key={u.id} className="mod-search-item">
+                                <div className="user-avatar" style={{ width: 32, height: 32 }}>
+                                  <img src={avatarSrc(u)} alt={u.name} />
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontWeight: 600, fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</div>
+                                  <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
+                                </div>
+                                {u.gender && (
+                                  <span className={getGenderBadgeClass(u.gender)} style={{ fontSize: "0.62rem", padding: "1px 5px" }}>
+                                    {u.gender}
+                                  </span>
+                                )}
+                                <button
+                                  className="btn-primary"
+                                  style={{ padding: "5px 12px", fontSize: "0.76rem" }}
+                                  onClick={() => handleAddModerator(u)}
+                                >
+                                  <ShieldPlus size={13} /> Add
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {addModSearch.trim() && !isSearchingMods && addModResults.length === 0 && (
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", marginTop: "8px", fontStyle: "italic" }}>
+                          No matching users found for "{addModSearch}". You can also click "Add" to try adding by exact username.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {isCurrentUserPrimeModerator(roomSettingsData) && (roomSettingsData.moderators?.length || 0) >= 5 && (
+                    <p style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>Room has reached the maximum of 5 moderators.</p>
+                  )}
+                </div>
+              )}
+
+              {roomSettingsTab === "members" && (
+                <div>
+                  <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "14px" }}>
+                    Search and add registered users to this room. You can also remove existing members.
+                  </p>
+                  <div className="explore-search-bar" style={{ marginBottom: "14px" }}>
+                    <Search size={16} color="var(--text-dim)" />
+                    <input type="text" placeholder="Search users to add..." value={addMemberSearch} onChange={e => searchMembersToAdd(e.target.value)} className="chat-input" />
+                  </div>
+                  {addMemberResults.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {addMemberResults.map(u => (
+                        <div key={u.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: "var(--bg-input)", borderRadius: "10px" }}>
+                          <img src={avatarSrc(u)} alt={u.name} style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover" }} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{u.name}</div>
+                            <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
+                          </div>
+                          <button className="btn-primary" style={{ padding: "5px 10px", fontSize: "0.78rem" }} onClick={() => handleAddMember(u.id)}>
+                            <UserPlus size={13} /> Add
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </main>
+      ) : viewMode === "mate" ? (
+        <main className="page-stage mate-stage">
+          <header className="page-header">
+            <button
+              type="button"
+              className="btn-back"
+              onClick={() => setViewMode("chat")}
+              title="Back to chats"
+            >
+              <ArrowLeft size={19} />
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>Mate Matchmaking</h2>
+              <div className="header-topic">1-on-1 Anonymous matching</div>
+            </div>
+          </header>
+
+          <div className="page-content-scroll">
+            <div className="mate-page-card">
+              <div style={{ textAlign: "center" }}>
+                <div className="mate-badge">
+                  <Sparkles size={14} /> Anonymous Matchmaking
+                </div>
+                <h2 className="mate-title brand-gradient">Find your mate</h2>
+                <p className="mate-subtitle">
+                  Enter your interests, jump into the matchmaking pool, and connect anonymously with someone on your wavelength.
+                </p>
+              </div>
+
+              {/* Center Rectangular Button with Rounded Edges */}
+              <div style={{ position: "relative", margin: "28px 0 20px 0", display: "flex", justifyContent: "center" }}>
+                <button
+                  type="button"
+                  className={`mate-rect-btn ${mateStatus === "searching" ? "searching" : ""}`}
+                  disabled={isSubmittingMatch}
+                  onClick={mateStatus === "searching" ? handleCancelMatchmaking : handleStartMatchmaking}
+                  title={mateStatus === "searching" ? "Click to cancel search" : "Start anonymous matchmaking"}
+                >
                   {mateStatus === "searching" ? (
                     <>
-                      <Loader2 size={36} className="mate-spin-icon" />
+                      <Loader2 size={20} className="mate-spin-icon" />
                       <span className="mate-btn-text">Searching...</span>
-                      <span className="mate-btn-sub">Click to cancel</span>
+                      <span className="mate-btn-sub" style={{ fontSize: "0.78rem", opacity: 0.85 }}>(Click to cancel)</span>
                     </>
                   ) : isSubmittingMatch ? (
                     <>
-                      <Loader2 size={36} className="mate-spin-icon" />
+                      <Loader2 size={20} className="mate-spin-icon" />
                       <span className="mate-btn-text">Matching...</span>
                     </>
                   ) : (
                     <>
-                      <Flame size={25} className="mate-flame-icon" /><br />
+                      <Flame size={20} className="mate-flame-icon" />
                       <span className="mate-btn-text">Find your Mate</span>
-                      {/* <span className="mate-btn-sub">1-on-1 Anonymous</span> */}
                     </>
                   )}
-                </span>
-              </button>
-            </div>
-
-            {/* Countdown display */}
-            {mateStatus === "searching" && (
-              <div className="mate-countdown-card">
-                <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "4px" }}>
-                  Finding a mate with overlapping interests...
-                </div>
-                <div className="mate-countdown-timer">
-                  <Clock size={18} />
-                  <span>
-                    {String(Math.floor(mateRemainingSeconds / 60)).padStart(2, "0")}:
-                    {String(mateRemainingSeconds % 60).padStart(2, "0")}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ marginTop: "12px", padding: "6px 18px", fontSize: "0.82rem" }}
-                  onClick={handleCancelMatchmaking}
-                >
-                  Cancel Search
                 </button>
               </div>
-            )}
 
-            {/* Interests preference field */}
-            <div className="mate-interests-box">
-              <label className="mate-input-label" htmlFor="mate-interests-input">
-                Your interests
-              </label>
-              <input
-                id="mate-interests-input"
-                type="text"
-                className="chat-input full-width"
-                placeholder="Enter interests separated by commas, e.g. coding, music, gaming, movies"
-                value={mateInterestsInput}
-                disabled={mateStatus === "searching"}
-                onChange={e => setMateInterestsInput(e.target.value)}
-              />
-              {mateInterestsInput.split(",").map(s => s.trim().toLowerCase()).filter((s, idx, arr) => s.length > 0 && arr.indexOf(s) === idx).length > 0 && (
-                <div className="mate-chip-wrap">
-                  {mateInterestsInput
-                    .split(",")
-                    .map(s => s.trim().toLowerCase())
-                    .filter((s, idx, arr) => s.length > 0 && arr.indexOf(s) === idx)
-                    .map(chip => (
-                      <span key={chip} className="mate-chip">
-                        #{chip}
-                      </span>
-                    ))}
+              {/* Countdown display */}
+              {mateStatus === "searching" && (
+                <div className="mate-countdown-card">
+                  <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "4px" }}>
+                    Finding a mate with overlapping interests...
+                  </div>
+                  <div className="mate-countdown-timer">
+                    <Clock size={18} />
+                    <span>
+                      {String(Math.floor(mateRemainingSeconds / 60)).padStart(2, "0")}:
+                      {String(mateRemainingSeconds % 60).padStart(2, "0")}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ marginTop: "12px", padding: "6px 18px", fontSize: "0.82rem" }}
+                    onClick={handleCancelMatchmaking}
+                  >
+                    Cancel Search
+                  </button>
                 </div>
               )}
-              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "6px" }}>
-                Interests are normalized (case-insensitive, trimmed, deduplicated) and compared using Jaccard similarity.
+
+              {/* Interests preference field */}
+              <div className="mate-interests-box">
+                <label className="mate-interests-label" htmlFor="mate-interests-input">
+                  <span>Your interests</span>
+                  <span style={{ fontSize: "0.72rem", color: "var(--text-dim)", textTransform: "none", fontWeight: 500 }}>
+                    e.g. coding, music, gaming
+                  </span>
+                </label>
+                <input
+                  id="mate-interests-input"
+                  type="text"
+                  className="mate-interests-input"
+                  placeholder="Enter interests separated by commas (coding, gaming, movies)..."
+                  value={mateInterestsInput}
+                  disabled={mateStatus === "searching"}
+                  onChange={e => setMateInterestsInput(e.target.value)}
+                />
+                {mateInterestsInput.split(",").map(s => s.trim().toLowerCase()).filter((s, idx, arr) => s.length > 0 && arr.indexOf(s) === idx).length > 0 && (
+                  <div className="mate-chip-wrap">
+                    {mateInterestsInput
+                      .split(",")
+                      .map(s => s.trim().toLowerCase())
+                      .filter((s, idx, arr) => s.length > 0 && arr.indexOf(s) === idx)
+                      .map(chip => (
+                        <span key={chip} className="mate-chip">
+                          #{chip}
+                        </span>
+                      ))}
+                  </div>
+                )}
+                <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "4px" }}>
+                  Interests are normalized (case-insensitive, trimmed, deduplicated) and compared using Jaccard similarity.
+                </div>
               </div>
             </div>
           </div>
@@ -1393,6 +1948,14 @@ export default function App() {
           {/* Header */}
           <header className="chat-header">
             <div className="header-title-box">
+              <button
+                type="button"
+                className="btn-back"
+                onClick={handleExitMateConversation}
+                title="Exit Mate Chat"
+              >
+                <ArrowLeft size={19} />
+              </button>
               <div
                 className="user-avatar"
                 style={{
@@ -1591,87 +2154,96 @@ export default function App() {
           </div>
         </main>
       ) : viewMode === "explore" ? (
-        <main className="explore-stage">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <h2 style={{ fontFamily: "var(--font-display)", fontSize: "1.5rem", fontWeight: 700 }}>Explore Friends</h2>
-              <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginTop: "2px" }}>Discover people and send friend requests to chat.</p>
+        <main className="page-stage explore-stage">
+          <header className="page-header">
+            <button
+              type="button"
+              className="btn-back"
+              onClick={() => setViewMode("chat")}
+              title="Back to chats"
+            >
+              <ArrowLeft size={19} />
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>Explore Friends</h2>
+              <div className="header-topic">Discover people and send friend requests to chat</div>
             </div>
-            <button className="btn-secondary" onClick={() => setViewMode("chat")}>Back to Chat</button>
-          </div>
+          </header>
 
-          <div className="explore-search-bar">
-            <Search size={18} color="var(--text-dim)" />
-            <input type="text" placeholder="Search by username or display name..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="chat-input" />
-          </div>
+          <div className="page-content-scroll explore-content-scroll">
+            <div className="explore-search-bar">
+              <Search size={18} color="var(--text-dim)" />
+              <input type="text" placeholder="Search by username or display name..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="chat-input" />
+            </div>
 
-          <div className="explore-grid">
-            {exploreUsersList.length === 0 ? (
-              <div style={{ gridColumn: "1/-1", textAlign: "center", color: "var(--text-dim)", padding: "40px 0" }}>
-                {searchQuery ? `No users found for "${searchQuery}"` : "Start searching for friends above!"}
-              </div>
-            ) : exploreUsersList.map(u => (
-              <div key={u.id} className="user-card">
-                <div className="user-card-header" onClick={() => openUserProfile(u.id)}>
-                  <div className="user-avatar" style={{ width: "42px", height: "42px" }}>
-                    <img src={avatarSrc(u)} alt={u.name} />
+            <div className="explore-grid">
+              {exploreUsersList.length === 0 ? (
+                <div style={{ gridColumn: "1/-1", textAlign: "center", color: "var(--text-dim)", padding: "40px 0" }}>
+                  {searchQuery ? `No users found for "${searchQuery}"` : "Start searching for friends above!"}
+                </div>
+              ) : exploreUsersList.map(u => (
+                <div key={u.id} className="user-card">
+                  <div className="user-card-header" onClick={() => openUserProfile(u.id)}>
+                    <div className="user-avatar" style={{ width: "42px", height: "42px" }}>
+                      <img src={avatarSrc(u)} alt={u.name} />
+                    </div>
+                    <div style={{ overflow: "hidden" }}>
+                      <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#fff" }}>{u.name}</div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
+                    </div>
                   </div>
-                  <div style={{ overflow: "hidden" }}>
-                    <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#fff" }}>{u.name}</div>
-                    <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span className={getGenderBadgeClass(u.gender)}>{u.gender || "Prefer not to say"}</span>
+                    {u.friendship_status === "accepted" && (
+                      <span className="badge-friends"><Check size={11} /> Friends</span>
+                    )}
+                  </div>
+                  {u.bio && <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "4px", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{u.bio}</p>}
+                  <div style={{ marginTop: "auto", display: "flex", gap: "8px", paddingTop: "10px" }}>
+                    {u.friendship_status === "accepted" ? (
+                      <>
+                        <button className="btn-primary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => { setViewMode("chat"); selectTab("direct", u.id, u); }}>
+                          <MessageSquare size={14} /> Chat
+                        </button>
+                        <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
+                          Profile
+                        </button>
+                      </>
+                    ) : u.friendship_status === "pending_sent" ? (
+                      <>
+                        <button className="btn-secondary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem", opacity: 0.8 }} disabled>
+                          <Clock size={14} /> Requested
+                        </button>
+                        <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
+                          Profile
+                        </button>
+                      </>
+                    ) : u.friendship_status === "pending_received" ? (
+                      <>
+                        <button className="btn-primary" style={{ flex: 1, padding: "8px 8px", fontSize: "0.78rem" }} onClick={() => handleRespondFriendRequest(u.friend_request_id, "accepted")}>
+                          <Check size={13} /> Accept
+                        </button>
+                        <button className="btn-danger" style={{ flex: 1, padding: "8px 8px", fontSize: "0.78rem" }} onClick={() => handleRespondFriendRequest(u.friend_request_id, "ignored")}>
+                          <X size={13} /> Ignore
+                        </button>
+                        <button className="btn-secondary" style={{ padding: "8px 10px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
+                          Profile
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="btn-primary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => handleSendFriendRequest(u.id)}>
+                          <UserPlus size={14} /> Add Friend
+                        </button>
+                        <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
+                          Profile
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span className={getGenderBadgeClass(u.gender)}>{u.gender || "Prefer not to say"}</span>
-                  {u.friendship_status === "accepted" && (
-                    <span className="badge-friends"><Check size={11} /> Friends</span>
-                  )}
-                </div>
-                {u.bio && <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "4px", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{u.bio}</p>}
-                <div style={{ marginTop: "auto", display: "flex", gap: "8px", paddingTop: "10px" }}>
-                  {u.friendship_status === "accepted" ? (
-                    <>
-                      <button className="btn-primary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => { setViewMode("chat"); selectTab("direct", u.id, u); }}>
-                        <MessageSquare size={14} /> Chat
-                      </button>
-                      <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
-                        Profile
-                      </button>
-                    </>
-                  ) : u.friendship_status === "pending_sent" ? (
-                    <>
-                      <button className="btn-secondary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem", opacity: 0.8 }} disabled>
-                        <Clock size={14} /> Requested
-                      </button>
-                      <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
-                        Profile
-                      </button>
-                    </>
-                  ) : u.friendship_status === "pending_received" ? (
-                    <>
-                      <button className="btn-primary" style={{ flex: 1, padding: "8px 8px", fontSize: "0.78rem" }} onClick={() => handleRespondFriendRequest(u.friend_request_id, "accepted")}>
-                        <Check size={13} /> Accept
-                      </button>
-                      <button className="btn-danger" style={{ flex: 1, padding: "8px 8px", fontSize: "0.78rem" }} onClick={() => handleRespondFriendRequest(u.friend_request_id, "ignored")}>
-                        <X size={13} /> Ignore
-                      </button>
-                      <button className="btn-secondary" style={{ padding: "8px 10px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
-                        Profile
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button className="btn-primary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => handleSendFriendRequest(u.id)}>
-                        <UserPlus size={14} /> Add Friend
-                      </button>
-                      <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
-                        Profile
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </main>
       ) : (
@@ -1680,6 +2252,14 @@ export default function App() {
           {/* Header */}
           <header className="chat-header">
             <div className="header-title-box">
+              <button
+                type="button"
+                className="btn-back"
+                onClick={() => setActiveTab({ type: "room", id: null, data: null })}
+                title="Back to chats"
+              >
+                <ArrowLeft size={19} />
+              </button>
               {activeTab.type === "room" && activeRoom && (
                 <div className="room-icon-header" onClick={() => isCurrentUserModerator(activeRoom) && openRoomSettings(activeRoom)}>
                   {activeRoom.picture ? (
@@ -1808,264 +2388,6 @@ export default function App() {
       )}
 
       {/* ══════════════════════════════════════════════════════════
-          USER PROFILE MODAL
-      ══════════════════════════════════════════════════════════ */}
-      {viewingProfileId && profileData && (
-        <div className="modal-overlay" onClick={() => setViewingProfileId(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{viewingProfileId === currentUser.id ? "Your Profile" : "Profile"}</h3>
-              <button className="btn-icon" onClick={() => setViewingProfileId(null)}><X size={18} /></button>
-            </div>
-
-            {viewingProfileId === currentUser.id && isEditingProfile ? (
-              /* ── Edit Own Profile ── */
-              <form onSubmit={handleSaveProfile} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                {/* Avatar Upload */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-                  <div style={{ position: "relative", width: "80px", height: "80px" }}>
-                    <img src={avatarSrc(currentUser)} alt="" style={{ width: "80px", height: "80px", borderRadius: "50%", objectFit: "cover", border: "3px solid var(--accent-primary)" }} />
-                    <button type="button" className="avatar-upload-btn" onClick={() => avatarFileRef.current?.click()} title="Upload Photo" disabled={uploadingAvatar}>
-                      <Camera size={14} />
-                    </button>
-                  </div>
-                  <input ref={avatarFileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) handleAvatarUpload(e.target.files[0]); }} />
-                  {uploadingAvatar && <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>Uploading...</span>}
-                </div>
-
-                <div className="profile-field-group">
-                  <label className="profile-field-label">Display Name</label>
-                  <input type="text" value={editName} onChange={e => setEditName(e.target.value)} required className="chat-input profile-field-val" />
-                </div>
-                <div className="profile-field-group">
-                  <label className="profile-field-label">Username</label>
-                  <input type="text" value={editUsername} onChange={e => setEditUsername(e.target.value)} required className="chat-input profile-field-val" />
-                </div>
-                <div className="profile-field-group">
-                  <label className="profile-field-label">Gender</label>
-                  <select value={editGender} onChange={e => setEditGender(e.target.value)} className="profile-field-val chat-input">
-                    <option value="Prefer not to say">Prefer not to say</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div className="profile-field-group">
-                  <label className="profile-field-label">Bio</label>
-                  <textarea rows={3} value={editBio} onChange={e => setEditBio(e.target.value)} className="chat-input profile-field-val" style={{ resize: "none" }} />
-                </div>
-                <div className="profile-field-group">
-                  <label className="profile-field-label">Interests</label>
-                  <input type="text" placeholder="e.g. Design, React, Gaming" value={editInterests} onChange={e => setEditInterests(e.target.value)} className="chat-input profile-field-val" />
-                </div>
-                <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
-                  <button type="submit" className="btn-primary" style={{ flex: 1 }}>Save Changes</button>
-                  <button type="button" className="btn-secondary" onClick={() => setIsEditingProfile(false)}>Cancel</button>
-                </div>
-              </form>
-            ) : (
-              /* ── View Profile ── */
-              <div>
-                <div className="profile-hero">
-                  <div className="profile-avatar-lg" style={{ position: "relative" }}>
-                    <img src={avatarSrc(profileData.user)} alt={profileData.user.name} />
-                    {viewingProfileId === currentUser.id && (
-                      <button type="button" className="avatar-upload-btn" onClick={() => avatarFileRef.current?.click()} title="Change Photo" disabled={uploadingAvatar}>
-                        <Camera size={14} />
-                      </button>
-                    )}
-                    <input ref={avatarFileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) handleAvatarUpload(e.target.files[0]); }} />
-                  </div>
-                  <div>
-                    <h4 style={{ fontSize: "1.2rem", fontWeight: 700, color: "#fff" }}>{profileData.user.name}</h4>
-                    <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginBottom: "6px" }}>@{profileData.user.username}</div>
-                    <span className={getGenderBadgeClass(profileData.user.gender)}>{profileData.user.gender || "Prefer not to say"}</span>
-                  </div>
-                </div>
-
-                {/* Profile Tabs */}
-                <div className="profile-tabs">
-                  <button
-                    type="button"
-                    className={`profile-tab-btn ${profileTab === "profile" ? "active" : ""}`}
-                    onClick={() => setProfileTab("profile")}
-                  >
-                    <UserIcon size={14} /> Profile
-                  </button>
-                  <button
-                    type="button"
-                    className={`profile-tab-btn ${profileTab === "friends" ? "active" : ""}`}
-                    onClick={() => setProfileTab("friends")}
-                  >
-                    <Users size={14} /> Friends ({profileData.friends_count || 0})
-                  </button>
-                  {viewingProfileId === currentUser.id && (
-                    <button
-                      type="button"
-                      className={`profile-tab-btn ${profileTab === "requests" ? "active" : ""}`}
-                      onClick={() => setProfileTab("requests")}
-                    >
-                      <Clock size={14} /> Requests
-                      {profileData.pending_requests?.length > 0 && (
-                        <span className="badge-count">{profileData.pending_requests.length}</span>
-                      )}
-                    </button>
-                  )}
-                </div>
-
-                {/* TAB 1: Profile Info */}
-                {profileTab === "profile" && (
-                  <div>
-                    <div className="profile-field-group">
-                      <span className="profile-field-label">Bio</span>
-                      <div className="profile-field-val">{profileData.user.bio || "No bio yet."}</div>
-                    </div>
-                    <div className="profile-field-group">
-                      <span className="profile-field-label">Interests</span>
-                      <div className="profile-field-val">{profileData.user.interests || "No interests specified."}</div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div style={{ marginTop: "20px", display: "flex", gap: "10px" }}>
-                      {viewingProfileId === currentUser.id ? (
-                        <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setIsEditingProfile(true)}>
-                          <Edit3 size={15} /> Edit Profile
-                        </button>
-                      ) : (
-                        <>
-                          {profileData.friendship_status === "accepted" ? (
-                            <button className="btn-primary" style={{ flex: 1 }} onClick={() => { setViewingProfileId(null); selectTab("direct", profileData.user.id, profileData.user); }}>
-                              <MessageSquare size={15} /> Chat
-                            </button>
-                          ) : profileData.friendship_status === "pending_sent" ? (
-                            <button className="btn-secondary" style={{ flex: 1 }} disabled><Clock size={15} /> Request Pending</button>
-                          ) : profileData.friendship_status === "pending_received" ? (
-                            <div style={{ display: "flex", gap: "8px", width: "100%" }}>
-                              <button className="btn-primary" style={{ flex: 1 }} onClick={() => handleRespondFriendRequest(profileData.user.friend_request_id, "accepted")}>
-                                <Check size={14} /> Accept Request
-                              </button>
-                              <button className="btn-danger" style={{ flex: 1 }} onClick={() => handleRespondFriendRequest(profileData.user.friend_request_id, "ignored")}>
-                                <X size={14} /> Ignore
-                              </button>
-                            </div>
-                          ) : (
-                            <button className="btn-primary" style={{ flex: 1 }} onClick={() => handleSendFriendRequest(profileData.user.id)}>
-                              <UserPlus size={15} /> Add Friend
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB 2: Friends Tab */}
-                {profileTab === "friends" && (
-                  <div>
-                    {profileData.friends.length === 0 ? (
-                      <div className="empty-requests-box">
-                        <Users size={36} style={{ opacity: 0.3, marginBottom: "8px" }} />
-                        <p style={{ fontWeight: 600 }}>No friends yet</p>
-                        <p style={{ fontSize: "0.82rem", color: "var(--text-dim)", marginTop: "4px" }}>
-                          Discover and add friends from the Explore section!
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="profile-friends-list">
-                        {profileData.friends.map(f => (
-                          <div key={f.id} className="friend-card-item">
-                            <div style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", flex: 1, overflow: "hidden" }} onClick={() => openUserProfile(f.id)}>
-                              <img src={avatarSrc(f)} alt={f.name} style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover" }} />
-                              <div style={{ overflow: "hidden" }}>
-                                <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{f.name}</div>
-                                <div style={{ fontSize: "0.74rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{f.username}</div>
-                              </div>
-                              {f.gender && (
-                                <span className={getGenderBadgeClass(f.gender)} style={{ fontSize: "0.58rem", padding: "1px 5px" }}>
-                                  {f.gender}
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ display: "flex", gap: "6px" }}>
-                              <button
-                                className="btn-primary"
-                                style={{ padding: "5px 12px", fontSize: "0.78rem" }}
-                                onClick={() => { setViewingProfileId(null); selectTab("direct", f.id, f); }}
-                              >
-                                <MessageSquare size={13} /> Chat
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* TAB 3: Requests Tab (only shown for own profile) */}
-                {viewingProfileId === currentUser.id && profileTab === "requests" && (
-                  <div>
-                    {!profileData.pending_requests || profileData.pending_requests.length === 0 ? (
-                      <div className="empty-requests-box">
-                        <UserCheck size={36} style={{ opacity: 0.3, marginBottom: "8px" }} />
-                        <p style={{ fontWeight: 600, fontSize: "0.95rem" }}>No Pending Requests</p>
-                        <p style={{ fontSize: "0.82rem", color: "var(--text-dim)", marginTop: "4px" }}>
-                          When someone sends you a friend request, it will appear here so you can accept or ignore it.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="profile-requests-list">
-                        {profileData.pending_requests.map(req => (
-                          <div key={req.id} className="request-card">
-                            <div className="request-user-info" onClick={() => openUserProfile(req.requester.id)}>
-                              <div className="user-avatar" style={{ width: 38, height: 38 }}>
-                                <img src={avatarSrc(req.requester)} alt={req.requester.name} />
-                              </div>
-                              <div style={{ overflow: "hidden" }}>
-                                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-                                  {req.requester.name}
-                                </div>
-                                <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
-                                  @{req.requester.username}
-                                </div>
-                                {req.requester.gender && (
-                                  <span className={getGenderBadgeClass(req.requester.gender)} style={{ fontSize: "0.58rem", padding: "1px 5px", marginTop: "2px", display: "inline-block" }}>
-                                    {req.requester.gender}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="request-actions">
-                              <button
-                                className="btn-primary"
-                                style={{ padding: "6px 12px", fontSize: "0.78rem", gap: "5px" }}
-                                onClick={() => handleRespondFriendRequest(req.id, "accepted")}
-                                title="Accept Friend Request"
-                              >
-                                <Check size={13} /> Accept
-                              </button>
-                              <button
-                                className="btn-danger"
-                                style={{ padding: "6px 12px", fontSize: "0.78rem", gap: "5px" }}
-                                onClick={() => handleRespondFriendRequest(req.id, "ignored")}
-                                title="Ignore Friend Request"
-                              >
-                                <X size={13} /> Ignore
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════
           CREATE ROOM MODAL
       ══════════════════════════════════════════════════════════ */}
       {isCreateRoomOpen && (
@@ -2093,153 +2415,6 @@ export default function App() {
               </p>
               <button type="submit" className="btn-primary" style={{ marginTop: "4px" }}>Launch Room</button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════
-          ROOM SETTINGS MODAL (Moderators Only)
-      ══════════════════════════════════════════════════════════ */}
-      {roomSettingsOpen && roomSettingsData && (
-        <div className="modal-overlay" onClick={() => setRoomSettingsOpen(false)}>
-          <div className="modal-content modal-wide" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3><Settings size={17} /> Room Settings — #{roomSettingsData.slug}</h3>
-              <button className="btn-icon" onClick={() => setRoomSettingsOpen(false)}><X size={18} /></button>
-            </div>
-
-            {/* Settings Tabs */}
-            <div className="settings-tabs">
-              {["info", "moderators", "members"].map(tab => (
-                <button key={tab} className={`settings-tab ${roomSettingsTab === tab ? "active" : ""}`} onClick={() => setRoomSettingsTab(tab)}>
-                  {tab === "info" ? "Room Info" : tab === "moderators" ? "Moderators" : "Add Members"}
-                </button>
-              ))}
-            </div>
-
-            {roomSettingsTab === "info" && (
-              <div>
-                {/* Room Picture Upload */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-                  <div style={{ position: "relative", width: "80px", height: "80px" }}>
-                    {roomSettingsData.picture ? (
-                      <img src={`${API_BASE}${roomSettingsData.picture}`} alt="" style={{ width: "80px", height: "80px", borderRadius: "12px", objectFit: "cover", border: "3px solid var(--accent-primary)" }} />
-                    ) : (
-                      <div style={{ width: "80px", height: "80px", borderRadius: "12px", background: "var(--bg-input)", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid var(--border-subtle)" }}>
-                        <Image size={28} color="var(--text-dim)" />
-                      </div>
-                    )}
-                    <button type="button" className="avatar-upload-btn" onClick={() => roomPicRef.current?.click()} title="Upload Room Picture" disabled={uploadingRoomPic}>
-                      <Camera size={14} />
-                    </button>
-                  </div>
-                  <input ref={roomPicRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) handleRoomPicUpload(e.target.files[0]); }} />
-                  {uploadingRoomPic && <span style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>Uploading...</span>}
-                  <span style={{ fontSize: "0.74rem", color: "var(--text-dim)" }}>Room picture</span>
-                </div>
-
-                <form onSubmit={handleSaveRoomInfo} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  <div>
-                    <label className="profile-field-label">Room Title</label>
-                    <input type="text" value={editRoomTitle} onChange={e => setEditRoomTitle(e.target.value)} required className="chat-input profile-field-val" style={{ width: "100%", marginTop: "4px" }} />
-                  </div>
-                  <div>
-                    <label className="profile-field-label">Description</label>
-                    <textarea rows={3} value={editRoomDesc} onChange={e => setEditRoomDesc(e.target.value)} className="chat-input profile-field-val" style={{ width: "100%", marginTop: "4px", resize: "none" }} placeholder="Describe what this room is about..." />
-                  </div>
-                  <button type="submit" className="btn-primary">Save Changes</button>
-                </form>
-
-                {/* Delete Room — moderators only */}
-                <div style={{ marginTop: "24px", borderTop: "1px solid var(--border-subtle)", paddingTop: "16px" }}>
-                  <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "10px" }}>
-                    <strong>Danger Zone</strong> — deleting the room is permanent and removes all messages.
-                  </p>
-                  <button className="btn-danger" onClick={handleDeleteRoom}>
-                    <Trash2 size={15} /> Delete Room
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {roomSettingsTab === "moderators" && (
-              <div>
-                <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "14px" }}>
-                  A room can have up to 5 moderators (including prime). Only the prime moderator can add or remove others.
-                </p>
-
-                {/* Existing Moderators */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px" }}>
-                  {roomSettingsData.moderators?.map(mod => (
-                    <div key={mod.user_id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: "var(--bg-input)", borderRadius: "10px" }}>
-                      <img src={avatarSrc(mod)} alt={mod.name} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: "0.88rem" }}>{mod.name}</div>
-                        <div style={{ fontSize: "0.74rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{mod.username}</div>
-                      </div>
-                      {mod.is_prime ? (
-                        <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.72rem", color: "var(--accent-gold)", fontWeight: 700 }}>
-                          <Crown size={12} /> Prime
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: "0.72rem", color: "var(--accent-primary)", fontWeight: 600 }}>Moderator</span>
-                      )}
-                      {/* Remove button visible only to prime mod, for non-prime mods */}
-                      {!mod.is_prime && isCurrentUserPrimeModerator(roomSettingsData) && (
-                        <button className="btn-icon" style={{ color: "var(--color-danger)" }} title="Remove Moderator" onClick={() => handleRemoveModerator(mod.user_id)}>
-                          <ShieldOff size={15} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Add Moderator — prime mod only, by user_id */}
-                {isCurrentUserPrimeModerator(roomSettingsData) && (roomSettingsData.moderators?.length || 0) < 5 && (
-                  <div>
-                    <label className="profile-field-label">Add Moderator by User ID</label>
-                    <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
-                      <input type="text" placeholder="Paste user ID here..." value={addModUserId} onChange={e => setAddModUserId(e.target.value)} className="chat-input" style={{ flex: 1 }} />
-                      <button className="btn-primary" onClick={handleAddModerator} disabled={!addModUserId.trim()}>
-                        <ShieldPlus size={14} /> Add
-                      </button>
-                    </div>
-                    <p style={{ fontSize: "0.72rem", color: "var(--text-dim)", marginTop: "6px" }}>You can find User IDs from their profile (for now). Max 5 moderators total.</p>
-                  </div>
-                )}
-                {isCurrentUserPrimeModerator(roomSettingsData) && (roomSettingsData.moderators?.length || 0) >= 5 && (
-                  <p style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>Room has reached the maximum of 5 moderators.</p>
-                )}
-              </div>
-            )}
-
-            {roomSettingsTab === "members" && (
-              <div>
-                <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "14px" }}>
-                  Search and add registered users to this room. You can also remove existing members.
-                </p>
-                <div className="explore-search-bar" style={{ marginBottom: "14px" }}>
-                  <Search size={16} color="var(--text-dim)" />
-                  <input type="text" placeholder="Search users to add..." value={addMemberSearch} onChange={e => searchMembersToAdd(e.target.value)} className="chat-input" />
-                </div>
-                {addMemberResults.length > 0 && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                    {addMemberResults.map(u => (
-                      <div key={u.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: "var(--bg-input)", borderRadius: "10px" }}>
-                        <img src={avatarSrc(u)} alt={u.name} style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover" }} />
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{u.name}</div>
-                          <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
-                        </div>
-                        <button className="btn-primary" style={{ padding: "5px 10px", fontSize: "0.78rem" }} onClick={() => handleAddMember(u.id)}>
-                          <UserPlus size={13} /> Add
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
       )}
