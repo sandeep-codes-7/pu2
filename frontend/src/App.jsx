@@ -84,6 +84,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [messages, setMessages] = useState([]);
   const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+  const [unreadCounts, setUnreadCounts] = useState({});
 
   // Input & Typing
   const [inputMessage, setInputMessage] = useState("");
@@ -143,6 +144,39 @@ export default function App() {
   const [viewingRoomInfo, setViewingRoomInfo] = useState(null);
   const [roomParticipants, setRoomParticipants] = useState([]);
   const [loadingRoomInfo, setLoadingRoomInfo] = useState(false);
+
+  const activeChatStateRef = useRef({
+    viewMode,
+    activeTab,
+    viewingProfileId,
+    roomSettingsOpen,
+    viewingRoomInfo,
+    currentUserId: currentUser?.id
+  });
+
+  useEffect(() => {
+    activeChatStateRef.current = {
+      viewMode,
+      activeTab,
+      viewingProfileId,
+      roomSettingsOpen,
+      viewingRoomInfo,
+      currentUserId: currentUser?.id
+    };
+  }, [viewMode, activeTab, viewingProfileId, roomSettingsOpen, viewingRoomInfo, currentUser]);
+
+  // Clear unread count when viewing active room or conversation
+  useEffect(() => {
+    if (viewMode === "chat" && activeTab.id && !viewingProfileId && !roomSettingsOpen && !viewingRoomInfo) {
+      const key = `${activeTab.type}_${activeTab.type === "room" ? activeTab.id?.toLowerCase() : activeTab.id}`;
+      setUnreadCounts(prev => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  }, [viewMode, activeTab.type, activeTab.id, viewingProfileId, roomSettingsOpen, viewingRoomInfo]);
 
   const wsRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -354,17 +388,51 @@ export default function App() {
             return next;
           });
         } else if (data.type === "room_message") {
-          if (activeTab.type === "room" && activeTab.id?.toLowerCase() === data.room_slug?.toLowerCase()) {
+          const state = activeChatStateRef.current;
+          const isViewingThisRoom = state.viewMode === "chat" &&
+            !state.viewingProfileId &&
+            !state.roomSettingsOpen &&
+            !state.viewingRoomInfo &&
+            state.activeTab.type === "room" &&
+            state.activeTab.id?.toLowerCase() === data.room_slug?.toLowerCase();
+
+          if (isViewingThisRoom) {
             setMessages(prev => [...prev, data]);
+          } else {
+            if (data.sender_id !== state.currentUserId) {
+              const roomKey = `room_${data.room_slug?.toLowerCase()}`;
+              setUnreadCounts(prev => ({
+                ...prev,
+                [roomKey]: (prev[roomKey] || 0) + 1
+              }));
+            }
           }
         } else if (data.type === "room_notice") {
-          if (activeTab.type === "room" && activeTab.id?.toLowerCase() === data.room_slug?.toLowerCase()) {
+          const state = activeChatStateRef.current;
+          if (state.activeTab.type === "room" && state.activeTab.id?.toLowerCase() === data.room_slug?.toLowerCase()) {
             setMessages(prev => [...prev, { isNotice: true, text: data.notice, id: Math.random() }]);
           }
         } else if (data.type === "direct_message") {
           refreshDirectConversations();
-          const isCurrentConvo = activeTab.type === "direct" && (activeTab.id === data.sender_id || activeTab.id === data.recipient_id);
-          if (isCurrentConvo) setMessages(prev => [...prev, data]);
+          const state = activeChatStateRef.current;
+          const isViewingThisConvo = state.viewMode === "chat" &&
+            !state.viewingProfileId &&
+            !state.roomSettingsOpen &&
+            !state.viewingRoomInfo &&
+            state.activeTab.type === "direct" &&
+            (state.activeTab.id === data.sender_id || state.activeTab.id === data.recipient_id);
+
+          if (isViewingThisConvo) {
+            setMessages(prev => [...prev, data]);
+          } else {
+            if (data.sender_id !== state.currentUserId) {
+              const directKey = `direct_${data.sender_id}`;
+              setUnreadCounts(prev => ({
+                ...prev,
+                [directKey]: (prev[directKey] || 0) + 1
+              }));
+            }
+          }
         } else if (data.type === "mate_match_found") {
           setMateConversationId(data.conversation_id);
           setMateStatus("matched");
@@ -504,6 +572,14 @@ export default function App() {
     setViewingRoomInfo(null);
     setActiveTab({ type, id, data: dataObj });
     setMessages([]);
+
+    const unreadKey = `${type}_${type === "room" ? id?.toLowerCase() : id}`;
+    setUnreadCounts(prev => {
+      if (!prev[unreadKey]) return prev;
+      const next = { ...prev };
+      delete next[unreadKey];
+      return next;
+    });
 
     if (type === "room") {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -1215,6 +1291,7 @@ export default function App() {
                 {rooms.map(room => {
                   const isActive = viewMode === "chat" && activeTab.type === "room" && activeTab.id === room.slug;
                   const isMod = isCurrentUserModerator(room);
+                  const roomUnread = unreadCounts[`room_${room.slug.toLowerCase()}`] || 0;
                   return !isSidebarCollapsed ? (
                     <div key={room.slug} className={`nav-item ${isActive ? "active" : ""}`}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, overflow: "hidden" }} onClick={() => selectTab("room", room.slug, room)}>
@@ -1228,6 +1305,11 @@ export default function App() {
                         </span>
                         {isMod && <Crown size={11} color="var(--accent-gold)" title="Moderator" />}
                       </div>
+                      {roomUnread > 0 && (
+                        <span className="unread-counter-badge" title={`${roomUnread} unread message${roomUnread > 1 ? "s" : ""}`}>
+                          {roomUnread > 99 ? "99+" : roomUnread}
+                        </span>
+                      )}
                       {isMod && (
                         <button className="btn-icon-sm" title="Room Settings" onClick={e => { e.stopPropagation(); openRoomSettings(room); }}>
                           <Settings size={13} />
@@ -1239,7 +1321,7 @@ export default function App() {
                       key={room.slug}
                       className={`nav-item collapsed-nav-item ${isActive ? "active" : ""}`}
                       onClick={() => selectTab("room", room.slug, room)}
-                      title={`# ${room.title}${isMod ? " (Moderator)" : ""}`}
+                      title={`# ${room.title}${isMod ? " (Moderator)" : ""}${roomUnread > 0 ? ` (${roomUnread} new)` : ""}`}
                     >
                       {room.picture ? (
                         <img src={`${API_BASE}${room.picture}`} alt={room.title} className="collapsed-room-pic" />
@@ -1247,6 +1329,11 @@ export default function App() {
                         <div className="collapsed-room-hash">
                           <Hash size={17} />
                         </div>
+                      )}
+                      {roomUnread > 0 && (
+                        <span className="unread-counter-badge collapsed">
+                          {roomUnread > 99 ? "99+" : roomUnread}
+                        </span>
                       )}
                     </div>
                   );
@@ -1276,6 +1363,7 @@ export default function App() {
                 {directConversations.map(u => {
                   const isActive = viewMode === "chat" && activeTab.type === "direct" && activeTab.id === u.id;
                   const isOnline = onlineUserIds.has(u.id);
+                  const directUnread = unreadCounts[`direct_${u.id}`] || 0;
                   return !isSidebarCollapsed ? (
                     <div key={u.id} className={`nav-item ${isActive ? "active" : ""}`} onClick={() => selectTab("direct", u.id, u)}>
                       <div className="user-avatar">
@@ -1291,18 +1379,28 @@ export default function App() {
                           {u.gender}
                         </span>
                       )}
+                      {directUnread > 0 && (
+                        <span className="unread-counter-badge" title={`${directUnread} unread message${directUnread > 1 ? "s" : ""}`}>
+                          {directUnread > 99 ? "99+" : directUnread}
+                        </span>
+                      )}
                     </div>
                   ) : (
                     <div
                       key={u.id}
                       className={`nav-item collapsed-nav-item ${isActive ? "active" : ""}`}
                       onClick={() => selectTab("direct", u.id, u)}
-                      title={`${u.name} (@${u.username})${u.gender ? ` • ${u.gender}` : ""}`}
+                      title={`${u.name} (@${u.username})${u.gender ? ` • ${u.gender}` : ""}${directUnread > 0 ? ` (${directUnread} new)` : ""}`}
                     >
                       <div className="user-avatar">
                         <img src={avatarSrc(u)} alt={u.name} />
                         <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
                       </div>
+                      {directUnread > 0 && (
+                        <span className="unread-counter-badge collapsed">
+                          {directUnread > 99 ? "99+" : directUnread}
+                        </span>
+                      )}
                     </div>
                   );
                 })}

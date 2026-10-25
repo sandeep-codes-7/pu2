@@ -161,7 +161,7 @@ async def websocket_gateway(
                         "sender_avatar": user_info["avatar"],
                         "created_at": created_at_iso
                     }
-                    await hub.broadcast_to_room(slug, msg_data)
+                    await hub.broadcast_global(msg_data)
 
             elif action == "send_direct_message":
                 recipient_id = payload.get("recipient_id")

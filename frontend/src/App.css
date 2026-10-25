@@ -1987,6 +1987,52 @@
 }
 
 /* ==========================================================================
+   UNREAD MESSAGE COUNTER BADGES (WhatsApp style)
+   ========================================================================== */
+.unread-counter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  background: #4b5563; /* little sleek gray label */
+  color: #ffffff;      /* crisp white color count */
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-left: auto;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  animation: unreadPop 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.unread-counter-badge.collapsed {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  font-size: 0.62rem;
+  z-index: 6;
+  border: 1.5px solid var(--bg-dark);
+  margin-left: 0;
+}
+
+@keyframes unreadPop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
    RESPONSIVE DESIGN (MOBILE & DESKTOP)
    ========================================================================== */
 @media (max-width: 768px) {
