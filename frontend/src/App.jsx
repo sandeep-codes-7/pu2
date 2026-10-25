@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
+import LandingPage from './LandingPage.jsx';
 import {
   Hash, MessageSquare, Users, Send, Plus, LogOut, Search,
   UserPlus, Check, X, UserCheck, Clock, Sparkles, Edit3,
@@ -43,6 +44,8 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [loginNotice, setLoginNotice] = useState("");
   const [loginReturnPath, setLoginReturnPath] = useState("");
+  const [showLandingPage, setShowLandingPage] = useState(() => !localStorage.getItem("pairup_token"));
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Snackbar Notification
   const [snackbar, setSnackbar] = useState(null);
@@ -203,15 +206,19 @@ export default function App() {
           client_id: googleClientId,
           callback: handleGoogleCredentialResponse,
         });
-        const btn = document.getElementById("google-signin-btn");
-        if (btn) {
-          window.google.accounts.id.renderButton(btn, {
-            theme: "outline", size: "large", shape: "rectangular", width: 340, text: "continue_with"
-          });
-        }
+        const timer = setTimeout(() => {
+          const btn = document.getElementById("google-signin-btn");
+          if (btn) {
+            btn.innerHTML = "";
+            window.google.accounts.id.renderButton(btn, {
+              theme: "outline", size: "large", shape: "rectangular", width: 340, text: "continue_with"
+            });
+          }
+        }, 50);
+        return () => clearTimeout(timer);
       } catch (e) { console.error(e); }
     }
-  }, [token, googleClientId]);
+  }, [token, googleClientId, showAuthModal]);
 
   const handleGoogleCredentialResponse = async (response) => {
     setAuthError("");
@@ -228,7 +235,7 @@ export default function App() {
   };
 
   const handleDemoLogin = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setAuthError("");
     if (!demoUsername.trim()) return;
     try {
@@ -260,6 +267,8 @@ export default function App() {
       localStorage.removeItem("pairup_user");
       setLoginNotice("You should login to use these features.");
       setLoginReturnPath(targetPath);
+      setShowAuthModal(true);
+      setShowLandingPage(true);
       showSnackbar("You should login to use these features.", "error");
       return true;
     }
@@ -272,6 +281,8 @@ export default function App() {
     localStorage.setItem("pairup_token", jwtToken);
     localStorage.setItem("pairup_user", JSON.stringify(user));
     setLoginNotice("");
+    setShowAuthModal(false);
+    setShowLandingPage(false);
     if (loginReturnPath === "mate" && user.provider !== "demo") {
       setViewMode("mate");
       setLoginReturnPath("");
@@ -283,9 +294,12 @@ export default function App() {
       try { await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }); } catch (e) { }
     }
     if (wsRef.current) wsRef.current.close();
-    setToken(""); setCurrentUser(null);
+    setToken("");
+    setCurrentUser(null);
     localStorage.removeItem("pairup_token");
     localStorage.removeItem("pairup_user");
+    setShowLandingPage(true);
+    setShowAuthModal(false);
     setMateStatus("idle");
     setMateConversationId(null);
     setMateConversationData(null);
@@ -1123,54 +1137,27 @@ export default function App() {
   const activeDirectUser = directConversations.find(u => u.id === activeTab.id) || activeTab.data;
 
   // ══════════════════════════════════════════════════════════════
-  // LOGIN SCREEN
+  // LANDING PAGE & AUTHENTICATION
   // ══════════════════════════════════════════════════════════════
-  if (!token || !currentUser) {
+  if (!token || !currentUser || showLandingPage) {
     return (
-      <div className="login-screen">
-        <div className="login-card">
-          <div style={{ textAlign: "center", marginBottom: "28px" }}>
-            <h1 className="brand-gradient" style={{ fontSize: "2.6rem", marginBottom: "8px", letterSpacing: "-0.03em" }}>
-              PairUP
-            </h1>
-            <p style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
-              Connect. Pair up. Chat in real-time.
-            </p>
-          </div>
-
-          {loginNotice && (
-            <div className="error-banner" style={{ background: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "#fca5a5", marginBottom: "16px" }}>
-              {loginNotice}
-            </div>
-          )}
-
-          {authError && (
-            <div className="error-banner">{authError}</div>
-          )}
-
-          <div id="google-signin-btn" style={{ display: "flex", justifyContent: "center", minHeight: "44px", marginBottom: "4px" }} />
-
-          <div className="divider">Or Continue With Instant Pass</div>
-
-          <form onSubmit={handleDemoLogin} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <input type="text" placeholder="Choose Username" value={demoUsername} onChange={e => setDemoUsername(e.target.value)} required className="chat-input full-width" />
-            <input type="text" placeholder="Display Name (optional)" value={demoName} onChange={e => setDemoName(e.target.value)} className="chat-input full-width" />
-            <select value={demoGender} onChange={e => setDemoGender(e.target.value)} className="chat-input full-width select-field">
-              <option value="Prefer not to say">Gender: Prefer not to say</option>
-              <option value="Male">Gender: Male</option>
-              <option value="Female">Gender: Female</option>
-              <option value="Other">Gender: Other</option>
-            </select>
-            <button type="submit" className="btn-primary full-width" style={{ marginTop: "4px" }}>
-              Enter as Instant Pass (Guest)
-            </button>
-          </form>
-
-          <p style={{ fontSize: "0.74rem", color: "var(--text-dim)", textAlign: "center", marginTop: "16px" }}>
-            Instant Pass sessions are temporary — your data is removed when you leave.
-          </p>
-        </div>
-
+      <>
+        <LandingPage
+          onOpenAuth={() => setShowAuthModal(true)}
+          demoUsername={demoUsername}
+          setDemoUsername={setDemoUsername}
+          demoName={demoName}
+          setDemoName={setDemoName}
+          demoGender={demoGender}
+          setDemoGender={setDemoGender}
+          handleDemoLogin={handleDemoLogin}
+          isLoggedIn={Boolean(token && currentUser)}
+          onLaunchApp={() => setShowLandingPage(false)}
+          authError={authError}
+          loginNotice={loginNotice}
+          showAuthModal={showAuthModal}
+          setShowAuthModal={setShowAuthModal}
+        />
         {snackbar && (
           <div className="snackbar-container">
             <div className={`snackbar ${snackbar.type || "info"}`}>
@@ -1180,7 +1167,7 @@ export default function App() {
             </div>
           </div>
         )}
-      </div>
+      </>
     );
   }
 
@@ -1208,6 +1195,9 @@ export default function App() {
                 <h1 className="brand-gradient">PairUP</h1>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <button className="btn-section-action" title="About PairUP & Features" onClick={() => setShowLandingPage(true)}>
+                  <Info size={17} />
+                </button>
                 <button className="btn-section-action" title="Explore Friends" onClick={() => { setViewMode("explore"); loadExploreUsers(searchQuery); }}>
                   <Users size={18} />
                 </button>
@@ -1217,9 +1207,12 @@ export default function App() {
               </div>
             </>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", gap: "8px" }}>
               <button className="btn-section-action sidebar-collapse-btn" title="Expand sidebar" onClick={toggleSidebar}>
                 <PanelLeftOpen size={19} />
+              </button>
+              <button className="btn-section-action" title="About PairUP" onClick={() => setShowLandingPage(true)}>
+                <Info size={17} />
               </button>
             </div>
           )}
