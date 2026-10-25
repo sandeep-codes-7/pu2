@@ -6,7 +6,7 @@ import {
   Shield, ShieldPlus, ShieldOff, Trash2, Settings, Camera,
   Upload, Image, ChevronDown, Crown, UserMinus, User as UserIcon,
   Heart, AlertCircle, CheckCircle2, Loader2, Flame,
-  PanelLeftClose, PanelLeftOpen, ArrowLeft
+  PanelLeftClose, PanelLeftOpen, ArrowLeft, Info
 } from 'lucide-react';
 
 const API_BASE = window.location.origin.includes(":5173")
@@ -131,15 +131,18 @@ export default function App() {
   const [roomSettingsData, setRoomSettingsData] = useState(null);
   const [editRoomTitle, setEditRoomTitle] = useState("");
   const [editRoomDesc, setEditRoomDesc] = useState("");
-  const [roomSettingsTab, setRoomSettingsTab] = useState("info"); // "info" | "moderators" | "members"
+  const [roomSettingsTab, setRoomSettingsTab] = useState("info"); // "info" | "moderators"
   const [addModUserId, setAddModUserId] = useState("");
   const [addModSearch, setAddModSearch] = useState("");
   const [addModResults, setAddModResults] = useState([]);
   const [isSearchingMods, setIsSearchingMods] = useState(false);
-  const [addMemberSearch, setAddMemberSearch] = useState("");
-  const [addMemberResults, setAddMemberResults] = useState([]);
   const [uploadingRoomPic, setUploadingRoomPic] = useState(false);
   const roomPicRef = useRef(null);
+
+  // Room Info View (for normal users)
+  const [viewingRoomInfo, setViewingRoomInfo] = useState(null);
+  const [roomParticipants, setRoomParticipants] = useState([]);
+  const [loadingRoomInfo, setLoadingRoomInfo] = useState(false);
 
   const wsRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -498,6 +501,7 @@ export default function App() {
     setViewMode("chat");
     setViewingProfileId(null);
     setRoomSettingsOpen(false);
+    setViewingRoomInfo(null);
     setActiveTab({ type, id, data: dataObj });
     setMessages([]);
 
@@ -869,8 +873,6 @@ export default function App() {
     setAddModSearch("");
     setAddModResults([]);
     setIsSearchingMods(false);
-    setAddMemberSearch("");
-    setAddMemberResults([]);
     setRoomSettingsOpen(true);
   };
 
@@ -982,24 +984,23 @@ export default function App() {
     } catch (e) { alert("Network error"); }
   };
 
-  const searchMembersToAdd = async (q) => {
-    setAddMemberSearch(q);
-    if (!q.trim()) { setAddMemberResults([]); return; }
+  const openRoomInfo = async (room) => {
+    setViewingRoomInfo(room);
+    setLoadingRoomInfo(true);
     try {
-      const res = await fetch(`${API_BASE}/api/explore-users?query=${encodeURIComponent(q)}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) setAddMemberResults(await res.json());
-    } catch (e) { }
-  };
-
-  const handleAddMember = async (userId) => {
-    if (!roomSettingsData) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/rooms/${roomSettingsData.slug}/members/add`, {
-        method: "POST", headers: authHeaders(), body: JSON.stringify({ user_id: userId })
+      const res = await fetch(`${API_BASE}/api/rooms/${room.slug}/participants`, {
+        headers: authHeaders()
       });
-      const data = await res.json();
-      alert(data.message || data.detail || "Done");
-    } catch (e) { alert("Network error"); }
+      if (res.ok) {
+        setRoomParticipants(await res.json());
+      } else {
+        setRoomParticipants([]);
+      }
+    } catch (e) {
+      setRoomParticipants([]);
+    } finally {
+      setLoadingRoomInfo(false);
+    }
   };
 
   const handleRoomPicUpload = async (file) => {
@@ -1113,6 +1114,7 @@ export default function App() {
   const isPageActive = Boolean(
     viewingProfileId ||
     roomSettingsOpen ||
+    viewingRoomInfo ||
     viewMode === "mate" ||
     viewMode === "mate_chat" ||
     viewMode === "explore" ||
@@ -1653,9 +1655,9 @@ export default function App() {
             <div className="page-card">
               {/* Settings Tabs */}
               <div className="settings-tabs">
-                {["info", "moderators", "members"].map(tab => (
+                {["info", "moderators"].map(tab => (
                   <button key={tab} className={`settings-tab ${roomSettingsTab === tab ? "active" : ""}`} onClick={() => setRoomSettingsTab(tab)}>
-                    {tab === "info" ? "Room Info" : tab === "moderators" ? "Moderators" : "Add Members"}
+                    {tab === "info" ? "Room Info" : "Moderators"}
                   </button>
                 ))}
               </div>
@@ -1807,33 +1809,152 @@ export default function App() {
                 </div>
               )}
 
-              {roomSettingsTab === "members" && (
-                <div>
-                  <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "14px" }}>
-                    Search and add registered users to this room. You can also remove existing members.
-                  </p>
-                  <div className="explore-search-bar" style={{ marginBottom: "14px" }}>
-                    <Search size={16} color="var(--text-dim)" />
-                    <input type="text" placeholder="Search users to add..." value={addMemberSearch} onChange={e => searchMembersToAdd(e.target.value)} className="chat-input" />
-                  </div>
-                  {addMemberResults.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                      {addMemberResults.map(u => (
-                        <div key={u.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: "var(--bg-input)", borderRadius: "10px" }}>
-                          <img src={avatarSrc(u)} alt={u.name} style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover" }} />
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{u.name}</div>
-                            <div style={{ fontSize: "0.72rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
-                          </div>
-                          <button className="btn-primary" style={{ padding: "5px 10px", fontSize: "0.78rem" }} onClick={() => handleAddMember(u.id)}>
-                            <UserPlus size={13} /> Add
-                          </button>
-                        </div>
-                      ))}
+              {/* End of Settings */}
+            </div>
+          </div>
+        </main>
+      ) : viewingRoomInfo ? (
+        <main className="page-stage room-info-page-stage">
+          <header className="page-header">
+            <button
+              type="button"
+              className="btn-back"
+              onClick={() => setViewingRoomInfo(null)}
+              title="Back to Room"
+            >
+              <ArrowLeft size={19} />
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                <Info size={18} /> Room Info
+              </h2>
+              <div className="header-topic">#{viewingRoomInfo.slug} · {viewingRoomInfo.title}</div>
+            </div>
+          </header>
+
+          <div className="page-content-scroll">
+            <div className="page-card">
+              {/* Room Header Info Card */}
+              <div className="room-info-hero">
+                <div className="room-info-avatar-box">
+                  {viewingRoomInfo.picture ? (
+                    <img src={`${API_BASE}${viewingRoomInfo.picture}`} alt={viewingRoomInfo.title} className="room-info-avatar-img" />
+                  ) : (
+                    <div className="room-info-avatar-fallback">
+                      <Hash size={32} />
                     </div>
                   )}
                 </div>
-              )}
+                <div className="room-info-details">
+                  <h3 className="room-info-title">{viewingRoomInfo.title}</h3>
+                  <div className="room-info-slug">#{viewingRoomInfo.slug}</div>
+                  {viewingRoomInfo.description ? (
+                    <p className="room-info-desc">{viewingRoomInfo.description}</p>
+                  ) : (
+                    <p className="room-info-desc" style={{ fontStyle: "italic", opacity: 0.6 }}>No room description provided.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Section 1: Moderators List */}
+              <div className="room-info-section">
+                <div className="room-info-section-header">
+                  <h4>
+                    <Shield size={16} /> Moderators ({viewingRoomInfo.moderators?.length || 0})
+                  </h4>
+                </div>
+                <div className="room-info-user-list">
+                  {(!viewingRoomInfo.moderators || viewingRoomInfo.moderators.length === 0) ? (
+                    <p className="room-info-empty-text">No moderators assigned.</p>
+                  ) : (
+                    viewingRoomInfo.moderators.map(mod => (
+                      <div
+                        key={mod.user_id}
+                        className="room-info-user-row"
+                        onClick={() => openUserProfile(mod.user_id)}
+                      >
+                        <div className="user-avatar" style={{ width: 36, height: 36 }}>
+                          <img src={avatarSrc(mod)} alt={mod.name} />
+                        </div>
+                        <div className="room-info-user-meta">
+                          <div className="room-info-user-name">
+                            {mod.name}
+                            {mod.gender && (
+                              <span className={getGenderBadgeClass(mod.gender)} style={{ fontSize: "0.6rem", padding: "1px 5px", marginLeft: "6px" }}>
+                                {mod.gender}
+                              </span>
+                            )}
+                          </div>
+                          <div className="room-info-user-handle">@{mod.username}</div>
+                        </div>
+                        {mod.is_prime ? (
+                          <span className="mod-prime-badge">
+                            <Crown size={12} /> Prime
+                          </span>
+                        ) : (
+                          <span className="mod-regular-badge">
+                            Moderator
+                          </span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Section 2: Room Participants List */}
+              <div className="room-info-section">
+                <div className="room-info-section-header">
+                  <h4>
+                    <Users size={16} /> Room Participants ({roomParticipants.length})
+                  </h4>
+                </div>
+                {loadingRoomInfo ? (
+                  <div style={{ display: "flex", justifyContent: "center", padding: "24px" }}>
+                    <Loader2 size={24} className="mate-spin-icon" style={{ color: "var(--accent-primary)" }} />
+                  </div>
+                ) : (
+                  <div className="room-info-user-list">
+                    {roomParticipants.length === 0 ? (
+                      <p className="room-info-empty-text">No participants yet. Send a message to appear here!</p>
+                    ) : (
+                      roomParticipants.map(user => (
+                        <div
+                          key={user.id}
+                          className="room-info-user-row"
+                          onClick={() => openUserProfile(user.id)}
+                        >
+                          <div className="user-avatar" style={{ width: 36, height: 36 }}>
+                            <img src={avatarSrc(user)} alt={user.name} />
+                          </div>
+                          <div className="room-info-user-meta">
+                            <div className="room-info-user-name">
+                              {user.name}
+                              {user.gender && (
+                                <span className={getGenderBadgeClass(user.gender)} style={{ fontSize: "0.6rem", padding: "1px 5px", marginLeft: "6px" }}>
+                                  {user.gender}
+                                </span>
+                              )}
+                            </div>
+                            <div className="room-info-user-handle">@{user.username}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ padding: "4px 10px", fontSize: "0.75rem" }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openUserProfile(user.id);
+                            }}
+                          >
+                            Profile
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </main>
@@ -1988,9 +2109,6 @@ export default function App() {
               <div>
                 <h2>
                   {mateConversationData?.partner_nickname || "Anonymous Mate"}
-                  <span className="mate-anon-tag" style={{ marginLeft: "8px" }}>
-                    ANONYMOUS MATE
-                  </span>
                 </h2>
                 <div className="header-topic">
                   You: {mateConversationData?.my_nickname ? `${ANIMAL_EMOJIS[mateConversationData?.my_nickname] || "🐾"} ${mateConversationData?.my_nickname}` : "Anonymous"}
@@ -2006,8 +2124,9 @@ export default function App() {
                   className="btn-secondary"
                   style={{ fontSize: "0.82rem", padding: "7px 14px" }}
                   onClick={() => openUserProfile(mateConversationData.partner_user_id)}
+                  title="View Profile"
                 >
-                  <UserCheck size={14} /> View Profile
+                  <UserCheck size={14} /> <span className="header-btn-text">View Profile</span>
                 </button>
               )}
 
@@ -2019,7 +2138,7 @@ export default function App() {
                 title={mateConversationData?.my_interest ? "You expressed interest!" : "Express interest in this mate"}
               >
                 <Heart size={14} fill={mateConversationData?.my_interest ? "currentColor" : "none"} />
-                <span>
+                <span className="header-btn-text">
                   {mateConversationData?.mutual_interest
                     ? "Friends! 🎉"
                     : mateConversationData?.my_interest
@@ -2035,7 +2154,7 @@ export default function App() {
                 title="Exit anonymous conversation"
               >
                 <LogOut size={14} />
-                <span>Exit</span>
+                <span className="header-btn-text">Exit</span>
               </button>
             </div>
           </header>
@@ -2274,7 +2393,7 @@ export default function App() {
                 <ArrowLeft size={19} />
               </button>
               {activeTab.type === "room" && activeRoom && (
-                <div className="room-icon-header" onClick={() => isCurrentUserModerator(activeRoom) && openRoomSettings(activeRoom)}>
+                <div className="room-icon-header" onClick={() => isCurrentUserModerator(activeRoom) ? openRoomSettings(activeRoom) : openRoomInfo(activeRoom)}>
                   {activeRoom.picture ? (
                     <img src={`${API_BASE}${activeRoom.picture}`} alt={activeRoom.title} style={{ width: 38, height: 38, borderRadius: "8px", objectFit: "cover" }} />
                   ) : (
@@ -2303,12 +2422,6 @@ export default function App() {
                         ? (activeRoom?.description || activeRoom?.slug && `#${activeRoom.slug}`)
                         : `@${activeDirectUser?.username || "user"}`}
                     </div>
-                    {activeTab.type === "room" && activeRoom?.moderators && (
-                      <div style={{ fontSize: "0.7rem", color: "var(--text-dim)", marginTop: "2px" }}>
-                        {activeRoom.moderators.length} moderator{activeRoom.moderators.length !== 1 ? "s" : ""}
-                        {activeRoom.moderators.find(m => m.is_prime) && ` · Prime: @${activeRoom.moderators.find(m => m.is_prime)?.username}`}
-                      </div>
-                    )}
                   </>
                 ) : (
                   <h2 style={{ color: "var(--text-dim)" }}>Select a room or conversation</h2>
@@ -2318,13 +2431,33 @@ export default function App() {
 
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
               {activeTab.type === "room" && activeRoom && isCurrentUserModerator(activeRoom) && (
-                <button className="btn-secondary" style={{ fontSize: "0.82rem", padding: "7px 14px" }} onClick={() => openRoomSettings(activeRoom)}>
-                  <Settings size={14} /> Manage Room
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: "0.82rem", padding: "7px 14px" }}
+                  onClick={() => openRoomSettings(activeRoom)}
+                  title="Manage Room"
+                >
+                  <Settings size={14} /> <span className="header-btn-text">Manage Room</span>
+                </button>
+              )}
+              {activeTab.type === "room" && activeRoom && !isCurrentUserModerator(activeRoom) && (
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: "0.82rem", padding: "7px 14px" }}
+                  onClick={() => openRoomInfo(activeRoom)}
+                  title="View Room Info"
+                >
+                  <Info size={14} /> <span className="header-btn-text">View Info</span>
                 </button>
               )}
               {activeTab.type === "direct" && activeDirectUser && (
-                <button className="btn-secondary" style={{ fontSize: "0.82rem", padding: "7px 14px" }} onClick={() => openUserProfile(activeDirectUser.id)}>
-                  View Profile
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: "0.82rem", padding: "7px 14px" }}
+                  onClick={() => openUserProfile(activeDirectUser.id)}
+                  title="View Profile"
+                >
+                  <UserIcon size={14} /> <span className="header-btn-text">View Profile</span>
                 </button>
               )}
             </div>

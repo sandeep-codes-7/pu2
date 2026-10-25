@@ -459,6 +459,40 @@ async def remove_room_member(
     return {"status": "removed", "message": "Member has been removed from the room"}
 
 
+@router.get("/rooms/{slug}/participants", response_model=List[UserOut])
+async def get_room_participants(slug: str, db: AsyncSession = Depends(get_db)):
+    """Returns participants for a room (users who sent messages, are room members, or creator)."""
+    room = await _get_room_with_moderators(db, slug)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    participant_ids = set()
+    msg_users_res = await db.execute(
+        select(Message.sender_id).filter(Message.room_id == room.id).distinct()
+    )
+    for row in msg_users_res.all():
+        if row[0]:
+            participant_ids.add(row[0])
+
+    members_res = await db.execute(
+        select(RoomMember.user_id).filter(RoomMember.room_id == room.id)
+    )
+    for row in members_res.all():
+        if row[0]:
+            participant_ids.add(row[0])
+
+    if room.creator_id:
+        participant_ids.add(room.creator_id)
+
+    if not participant_ids:
+        return []
+
+    users_res = await db.execute(
+        select(User).filter(User.id.in_(participant_ids)).order_by(User.name.asc())
+    )
+    return users_res.scalars().all()
+
+
 # ─────────────────────────────────────────────────────────────────
 # DIRECT CHATS (INITIATED CONVERSATIONS)
 # ─────────────────────────────────────────────────────────────────
