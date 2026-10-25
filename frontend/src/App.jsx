@@ -50,16 +50,29 @@ export default function App() {
 
   // Navigation & Layout
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 768) return false;
     return localStorage.getItem("pairup_sidebar_collapsed") === "true";
   });
 
   const toggleSidebar = () => {
+    if (typeof window !== "undefined" && window.innerWidth <= 768) return;
     setIsSidebarCollapsed(prev => {
       const next = !prev;
       localStorage.setItem("pairup_sidebar_collapsed", String(next));
       return next;
     });
   };
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 768 && isSidebarCollapsed) {
+        setIsSidebarCollapsed(false);
+      }
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [isSidebarCollapsed]);
 
   const [viewMode, setViewMode] = useState("chat"); // "chat" | "explore" | "mate" | "mate_chat"
   const [activeTab, setActiveTab] = useState({ type: "room", id: null, data: null });
@@ -1120,14 +1133,14 @@ export default function App() {
                 <button className="btn-section-action" title="Explore Friends" onClick={() => { setViewMode("explore"); loadExploreUsers(searchQuery); }}>
                   <Users size={18} />
                 </button>
-                <button className="btn-section-action" title="Collapse sidebar" onClick={toggleSidebar}>
+                <button className="btn-section-action sidebar-collapse-btn" title="Collapse sidebar" onClick={toggleSidebar}>
                   <PanelLeftClose size={18} />
                 </button>
               </div>
             </>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
-              <button className="btn-section-action" title="Expand sidebar" onClick={toggleSidebar}>
+              <button className="btn-section-action sidebar-collapse-btn" title="Expand sidebar" onClick={toggleSidebar}>
                 <PanelLeftOpen size={19} />
               </button>
             </div>
