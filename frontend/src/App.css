@@ -1909,15 +1909,15 @@
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  background: #f9fafb;
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   transition: all 0.15s;
   cursor: pointer;
 }
 
 .room-info-user-row:hover {
-  background: #f4f4f5;
+  background: var(--bg-card-hover);
   border-color: var(--border-accent);
 }
 
@@ -2688,6 +2688,49 @@
 }
 
 [data-theme="dark"] .room-info-avatar-box {
+  background: #121214;
+  border-color: #27272a;
+}
+
+[data-theme="dark"] .room-info-avatar-fallback {
+  color: #f4f4f5;
+}
+
+[data-theme="dark"] .room-info-user-row {
+  background: #18181b;
+  border-color: #27272a;
+}
+
+[data-theme="dark"] .room-info-user-row:hover {
+  background: #202024;
+  border-color: #3f3f46;
+}
+
+[data-theme="dark"] .room-info-user-row .btn-secondary {
+  background: #27272a;
+  border-color: #3f3f46;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .room-info-user-row .btn-secondary:hover {
+  background: #3f3f46;
+  border-color: #52525b;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .mod-prime-badge {
+  background: #2c210d;
+  border-color: #453214;
+  color: #fbbf24;
+}
+
+[data-theme="dark"] .mod-regular-badge {
+  background: #222226;
+  border-color: #333338;
+  color: #a1a1aa;
+}
+
+[data-theme="dark"] .mod-search-results {
   background: #121214;
   border-color: #27272a;
 }
