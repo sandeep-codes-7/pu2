@@ -377,17 +377,28 @@ async def delete_room(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Only moderators can delete a room."""
+    """Only the room creator or prime moderator can delete a room."""
     room = await _get_room_with_moderators(db, slug)
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
-    if not await _is_moderator(db, room.id, current_user.id):
-        raise HTTPException(status_code=403, detail="Only moderators can delete this room")
+    is_owner = room.creator_id == current_user.id or await _is_prime_moderator(db, room.id, current_user.id)
+    if not is_owner:
+        raise HTTPException(status_code=403, detail="Only the room creator or prime moderator can delete this room")
 
-    await db.delete(room)
+    room_id, room_slug = room.id, room.slug
+    # SQLite does not enforce ON DELETE CASCADE by default, so clean related rows explicitly
+    for model in (RoomAdmission, RoomMember, RoomModerator, Message):
+        await db.execute(delete(model).where(model.room_id == room_id))
+    await db.execute(delete(Room).where(Room.id == room_id))
     await db.commit()
-    return {"status": "deleted", "message": f"Room #{slug} has been deleted"}
+
+    await hub.broadcast_to_room(room_slug, {
+        "type": "room_deleted",
+        "room_slug": room_slug,
+        "notice": "This room was deleted by its moderator."
+    })
+    return {"status": "deleted", "message": f"Room #{room_slug} has been deleted"}
 
 
 # ─────────────────────────────────────────────────────────────────

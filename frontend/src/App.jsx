@@ -464,18 +464,32 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handleClickOutsideChatMenu);
   }, [chatMenuOpen]);
 
-  // Parse invite link from URL (?invite=slug&code=token or /invite/:slug)
+  // Parse invite link from URL (?invite=slug&code=token). The invite is persisted so it
+  // survives the login / OAuth redirect that unauthenticated visitors must go through.
+  const inviteMountedRef = useRef(false);
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const inviteSlug = params.get("invite");
       const inviteCode = params.get("code");
       if (inviteSlug && inviteCode) {
-        setInviteFromUrl({ slug: inviteSlug, code: inviteCode });
+        setInviteFromUrl({ slug: inviteSlug.toLowerCase(), code: inviteCode });
         window.history.replaceState({}, document.title, window.location.pathname);
+      } else {
+        const saved = localStorage.getItem("pairup_pending_invite");
+        if (saved) setInviteFromUrl(JSON.parse(saved));
       }
     } catch (e) { }
   }, []);
+
+  useEffect(() => {
+    if (inviteFromUrl) {
+      localStorage.setItem("pairup_pending_invite", JSON.stringify(inviteFromUrl));
+    } else if (inviteMountedRef.current) {
+      localStorage.removeItem("pairup_pending_invite");
+    }
+    inviteMountedRef.current = true;
+  }, [inviteFromUrl]);
 
   useEffect(() => {
     if (token) {
@@ -1231,10 +1245,20 @@ export default function App() {
     }
   };
 
-  const handleCopyInviteLink = (room) => {
-    const code = room?.invite_code;
-    const url = `${window.location.origin}/?invite=${room?.slug}&code=${code || ""}`;
-    navigator.clipboard.writeText(url);
+  const handleCopyInviteLink = async (room) => {
+    let code = room?.invite_code;
+    if (!code && room?.slug) {
+      try {
+        const r = await fetch(`${API_BASE}/api/rooms/${room.slug}/invite`, { headers: authHeaders() });
+        if (r.ok) code = (await r.json()).invite_code;
+      } catch (e) { }
+    }
+    if (!code) {
+      showSnackbar("Could not generate an invitation link for this room", "error");
+      return;
+    }
+    const url = `${window.location.origin}/?invite=${room.slug}&code=${code}`;
+    try { await navigator.clipboard.writeText(url); } catch (e) { window.prompt("Copy invitation link:", url); }
     setHasCopiedInvite(true);
     showSnackbar("Invitation link copied to clipboard!", "success");
     setTimeout(() => setHasCopiedInvite(false), 2500);
@@ -1256,10 +1280,17 @@ export default function App() {
       if (res.ok) {
         if (data.status === "joined") {
           showSnackbar(data.message || "Joined room!", "success");
+          const joinedSlug = inviteFromUrl.slug;
           setInviteFromUrl(null);
           await loadRooms();
-          const targetRoom = rooms.find(r => r.slug === inviteFromUrl.slug);
-          if (targetRoom) selectTab("room", targetRoom.slug, targetRoom);
+          try {
+            const rr = await fetch(`${API_BASE}/api/rooms/${joinedSlug}`, { headers: authHeaders() });
+            if (rr.ok) {
+              const targetRoom = await rr.json();
+              setViewMode("chat");
+              selectTab("room", targetRoom.slug, targetRoom);
+            }
+          } catch (e) { }
         } else if (data.status === "pending") {
           showSnackbar(data.message || "Admission requested!", "info");
           setInviteAdmissionStatus("pending");
@@ -1312,8 +1343,9 @@ export default function App() {
   };
 
   const handleDeleteRoom = async (roomObj) => {
-    const targetRoom = roomObj || roomSettingsData;
-    if (!targetRoom) return;
+    // onClick handlers pass a DOM event; only accept real room objects
+    const targetRoom = (roomObj && roomObj.slug) ? roomObj : roomSettingsData;
+    if (!targetRoom || !targetRoom.slug) return;
     if (!window.confirm(`Delete room #${targetRoom.slug}? This cannot be undone.`)) return;
     try {
       const res = await fetch(`${API_BASE}/api/rooms/${targetRoom.slug}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
@@ -2743,7 +2775,7 @@ export default function App() {
                     <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "10px" }}>
                       <strong>Danger Zone</strong> — deleting the room is permanent and removes all messages.
                     </p>
-                    <button className="btn-danger" onClick={handleDeleteRoom}>
+                    <button className="btn-danger" onClick={() => handleDeleteRoom(roomSettingsData)}>
                       <Trash2 size={15} /> Delete Room
                     </button>
                   </div>
