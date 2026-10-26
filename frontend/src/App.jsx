@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 import LandingPage from './LandingPage.jsx';
 import {
-  Hash, MessageSquare, Users, Send, Plus, LogOut, Search,
+  Hash, MessageSquare, Megaphone, Users, Send, Plus, LogOut, Search,
   UserPlus, Check, X, UserCheck, Clock, Sparkles, Edit3,
   Shield, ShieldPlus, ShieldOff, Trash2, Settings, Camera,
   Upload, Image, ChevronDown, Crown, UserMinus, User as UserIcon,
   Heart, AlertCircle, CheckCircle2, Loader2, Flame,
-  PanelLeftClose, PanelLeftOpen, ArrowLeft, Info, Sun, Moon
+  PanelLeftClose, PanelLeftOpen, ArrowLeft, Info, Sun, Moon,
+  Bell, Lock, Globe, Copy, Share2, MoreVertical, Eraser
 } from 'lucide-react';
 
 const API_BASE = window.location.origin.includes(":5173")
@@ -111,6 +112,7 @@ export default function App() {
 
   const [viewMode, setViewMode] = useState("chat"); // "chat" | "explore" | "mate" | "mate_chat"
   const [activeTab, setActiveTab] = useState({ type: "room", id: null, data: null });
+  const [mobileTab, setMobileTab] = useState("chat"); // "chat" | "announcements"
 
   // Data
   const [rooms, setRooms] = useState([]);
@@ -161,13 +163,18 @@ export default function App() {
   const [newRoomSlug, setNewRoomSlug] = useState("");
   const [newRoomTitle, setNewRoomTitle] = useState("");
   const [newRoomDesc, setNewRoomDesc] = useState("");
+  const [newRoomIsPrivate, setNewRoomIsPrivate] = useState(false);
 
   // Room Settings Modal (moderators)
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
   const [roomSettingsData, setRoomSettingsData] = useState(null);
   const [editRoomTitle, setEditRoomTitle] = useState("");
   const [editRoomDesc, setEditRoomDesc] = useState("");
-  const [roomSettingsTab, setRoomSettingsTab] = useState("info"); // "info" | "moderators"
+  const [editRoomIsPrivate, setEditRoomIsPrivate] = useState(false);
+  const [roomSettingsTab, setRoomSettingsTab] = useState("info"); // "info" | "moderators" | "admissions"
+  const [roomAdmissions, setRoomAdmissions] = useState([]);
+  const [isLoadingAdmissions, setIsLoadingAdmissions] = useState(false);
+  const [hasCopiedInvite, setHasCopiedInvite] = useState(false);
   const [addModUserId, setAddModUserId] = useState("");
   const [addModSearch, setAddModSearch] = useState("");
   const [addModResults, setAddModResults] = useState([]);
@@ -175,10 +182,30 @@ export default function App() {
   const [uploadingRoomPic, setUploadingRoomPic] = useState(false);
   const roomPicRef = useRef(null);
 
+  // Notification Box
+  const [notificationsOpenMode, setNotificationsOpenMode] = useState(null); // null | "sidebar" | "topright"
+  const notificationsOpen = notificationsOpenMode !== null;
+  const [notificationsList, setNotificationsList] = useState([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const notificationsSidebarRef = useRef(null);
+  const notificationsTopRightRef = useRef(null);
+
+  // Invite Link Handling (Joining via URL)
+  const [inviteFromUrl, setInviteFromUrl] = useState(null);
+  const [inviteAdmissionStatus, setInviteAdmissionStatus] = useState(null);
+
   // Room Info View (for normal users)
   const [viewingRoomInfo, setViewingRoomInfo] = useState(null);
   const [roomParticipants, setRoomParticipants] = useState([]);
   const [loadingRoomInfo, setLoadingRoomInfo] = useState(false);
+
+  // Active Chat Options Menu (Three Dots)
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const chatMenuRef = useRef(null);
+
+  // Mate #hot trends
+  const [mateTrends, setMateTrends] = useState([]);
+  const [isLoadingTrends, setIsLoadingTrends] = useState(false);
 
   const activeChatStateRef = useRef({
     viewMode,
@@ -341,29 +368,35 @@ export default function App() {
   // ──────────────────────────────────────────────────────────────
   // DATA LOADERS
   // ──────────────────────────────────────────────────────────────
-  const loadRooms = async () => {
+  // DATA LOADERS & NOTIFICATIONS
+  // ──────────────────────────────────────────────────────────────
+  const loadRooms = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/rooms`);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`${API_BASE}/api/rooms`, { headers });
       if (res.ok) setRooms(await res.json());
     } catch (e) { }
-  };
+  }, [token]);
 
-  const refreshDirectConversations = async () => {
+  const notificationsOpenRef = useRef(notificationsOpen);
+  useEffect(() => { notificationsOpenRef.current = notificationsOpen; }, [notificationsOpen]);
+
+  const refreshDirectConversations = useCallback(async () => {
     if (!token) return;
     try {
       const res = await fetch(`${API_BASE}/api/direct-conversations`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) setDirectConversations(await res.json());
     } catch (e) { }
-  };
+  }, [token]);
 
-  const loadExploreUsers = async (query = "") => {
+  const loadExploreUsers = useCallback(async (query = "") => {
     if (!token) return;
     try {
       const url = query ? `${API_BASE}/api/explore-users?query=${encodeURIComponent(query)}` : `${API_BASE}/api/explore-users`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) setExploreUsersList(await res.json());
     } catch (e) { }
-  };
+  }, [token]);
 
   const refreshPendingCount = useCallback(async () => {
     if (!token) return;
@@ -376,13 +409,88 @@ export default function App() {
     } catch (e) { }
   }, [token]);
 
+  const fetchNotifications = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/notifications`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        const items = data.items || [];
+        setNotificationsList(items);
+        if (!notificationsOpenRef.current) {
+          setUnreadNotificationsCount(data.unread_count || 0);
+        }
+        const friendReqCount = items.filter(n => n.type === "friend_request").length;
+        setPendingRequestsCount(friendReqCount);
+      }
+    } catch (e) { }
+  }, [token]);
+
+  const toggleNotifications = (mode = "topright") => {
+    setNotificationsOpenMode(prev => {
+      const next = prev === mode ? null : mode;
+      if (next) {
+        // Once opened, mark all notifications as read
+        setUnreadNotificationsCount(0);
+      }
+      return next;
+    });
+  };
+
+  // Close notifications on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      const activeRef = notificationsOpenMode === "sidebar" ? notificationsSidebarRef : notificationsTopRightRef;
+      if (activeRef.current && !activeRef.current.contains(e.target)) {
+        setNotificationsOpenMode(null);
+      }
+    };
+    if (notificationsOpenMode) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [notificationsOpenMode]);
+
+  // Close chat options menu on click outside
+  useEffect(() => {
+    const handleClickOutsideChatMenu = (e) => {
+      if (chatMenuRef.current && !chatMenuRef.current.contains(e.target)) {
+        setChatMenuOpen(false);
+      }
+    };
+    if (chatMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutsideChatMenu);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutsideChatMenu);
+  }, [chatMenuOpen]);
+
+  // Parse invite link from URL (?invite=slug&code=token or /invite/:slug)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const inviteSlug = params.get("invite");
+      const inviteCode = params.get("code");
+      if (inviteSlug && inviteCode) {
+        setInviteFromUrl({ slug: inviteSlug, code: inviteCode });
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (e) { }
+  }, []);
+
   useEffect(() => {
     if (token) {
       loadRooms();
       refreshDirectConversations();
       refreshPendingCount();
+      fetchNotifications();
+      const interval = setInterval(() => {
+        fetchNotifications();
+        loadRooms();
+      }, 15000);
+      return () => clearInterval(interval);
     }
-  }, [token, refreshPendingCount]);
+  }, [token, loadRooms, refreshPendingCount, fetchNotifications]);
+
   useEffect(() => { if (viewMode === "explore" && token) loadExploreUsers(searchQuery); }, [viewMode, searchQuery, token]);
 
   // ──────────────────────────────────────────────────────────────
@@ -411,14 +519,27 @@ export default function App() {
   // ──────────────────────────────────────────────────────────────
   // WEBSOCKET
   // ──────────────────────────────────────────────────────────────
+  const callbacksRef = useRef({});
   useEffect(() => {
-    if (!token || !currentUser) return;
+    callbacksRef.current = {
+      refreshPendingCount,
+      fetchNotifications,
+      loadRooms,
+      refreshDirectConversations,
+      loadMateConversation,
+      showSnackbar,
+    };
+  });
+
+  useEffect(() => {
+    if (!token) return;
     const ws = new WebSocket(`${WS_BASE}/ws?token=${encodeURIComponent(token)}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      if (activeTab.type === "room" && activeTab.id) {
-        ws.send(JSON.stringify({ action: "join_room", room_slug: activeTab.id }));
+      const state = activeChatStateRef.current;
+      if (state.activeTab?.type === "room" && state.activeTab?.id) {
+        ws.send(JSON.stringify({ action: "join_room", room_slug: state.activeTab.id }));
       }
     };
 
@@ -439,8 +560,8 @@ export default function App() {
             !state.viewingProfileId &&
             !state.roomSettingsOpen &&
             !state.viewingRoomInfo &&
-            state.activeTab.type === "room" &&
-            state.activeTab.id?.toLowerCase() === data.room_slug?.toLowerCase();
+            state.activeTab?.type === "room" &&
+            state.activeTab?.id?.toLowerCase() === data.room_slug?.toLowerCase();
 
           if (isViewingThisRoom) {
             setMessages(prev => [...prev, data]);
@@ -455,18 +576,18 @@ export default function App() {
           }
         } else if (data.type === "room_notice") {
           const state = activeChatStateRef.current;
-          if (state.activeTab.type === "room" && state.activeTab.id?.toLowerCase() === data.room_slug?.toLowerCase()) {
+          if (state.activeTab?.type === "room" && state.activeTab?.id?.toLowerCase() === data.room_slug?.toLowerCase()) {
             setMessages(prev => [...prev, { isNotice: true, text: data.notice, id: Math.random() }]);
           }
         } else if (data.type === "direct_message") {
-          refreshDirectConversations();
+          callbacksRef.current.refreshDirectConversations?.();
           const state = activeChatStateRef.current;
           const isViewingThisConvo = state.viewMode === "chat" &&
             !state.viewingProfileId &&
             !state.roomSettingsOpen &&
             !state.viewingRoomInfo &&
-            state.activeTab.type === "direct" &&
-            (state.activeTab.id === data.sender_id || state.activeTab.id === data.recipient_id);
+            state.activeTab?.type === "direct" &&
+            (state.activeTab?.id === data.sender_id || state.activeTab?.id === data.recipient_id);
 
           if (isViewingThisConvo) {
             setMessages(prev => [...prev, data]);
@@ -483,9 +604,9 @@ export default function App() {
           setMateConversationId(data.conversation_id);
           setMateStatus("matched");
           setMateExpiresAt(null);
-          loadMateConversation(data.conversation_id);
+          callbacksRef.current.loadMateConversation?.(data.conversation_id);
           setViewMode("mate_chat");
-          showSnackbar(`Match found! Connected with ${data.partner_nickname}`, "success");
+          callbacksRef.current.showSnackbar?.(`Match found! Connected with ${data.partner_nickname}`, "success");
         } else if (data.type === "mate_message") {
           if (data.conversation_id === mateConversationIdRef.current) {
             setMateMessages(prev => prev.some(m => m.id === data.id) ? prev : [...prev, data]);
@@ -493,7 +614,7 @@ export default function App() {
         } else if (data.type === "mate_interest_received") {
           if (data.conversation_id === mateConversationIdRef.current) {
             setMateConversationData(prev => prev ? { ...prev, partner_interest: true } : prev);
-            showSnackbar(`${data.nickname} is interested in you`, "info");
+            callbacksRef.current.showSnackbar?.(`${data.nickname} is interested in you`, "info");
           }
         } else if (data.type === "mate_mutual_interest") {
           if (data.conversation_id === mateConversationIdRef.current) {
@@ -502,14 +623,14 @@ export default function App() {
               mutual_interest: true,
               partner_user_id: data.partner_user_id
             } : prev);
-            showSnackbar("It's a Match! You are now friends on PairUP! 🎉", "success");
-            refreshDirectConversations();
-            refreshPendingCount();
+            callbacksRef.current.showSnackbar?.("It's a Match! You are now friends on PairUP! 🎉", "success");
+            callbacksRef.current.refreshDirectConversations?.();
+            callbacksRef.current.refreshPendingCount?.();
           }
         } else if (data.type === "mate_participant_left") {
           if (data.conversation_id === mateConversationIdRef.current) {
             setMateConversationData(prev => prev ? { ...prev, has_left: true } : prev);
-            showSnackbar(data.message || "The other user has left the conversation.", "info");
+            callbacksRef.current.showSnackbar?.(data.message || "The other user has left the conversation.", "info");
           }
         } else if (data.type === "mate_typing_status") {
           if (data.conversation_id === mateConversationIdRef.current) {
@@ -520,8 +641,27 @@ export default function App() {
               setMateTypingStatus(null);
             }
           }
+        } else if (data.type === "friend_request_received") {
+          callbacksRef.current.refreshPendingCount?.();
+          callbacksRef.current.fetchNotifications?.();
+          callbacksRef.current.showSnackbar?.(`New friend request from ${data.name || "a user"}!`, "info");
+        } else if (data.type === "friend_request_accepted") {
+          callbacksRef.current.refreshDirectConversations?.();
+          callbacksRef.current.fetchNotifications?.();
+          callbacksRef.current.showSnackbar?.(`${data.name} accepted your friend request! 🎉`, "success");
+        } else if (data.type === "room_admission_received") {
+          callbacksRef.current.loadRooms?.();
+          callbacksRef.current.fetchNotifications?.();
+          callbacksRef.current.showSnackbar?.(`${data.name} requested to join #${data.room_title}`, "info");
+        } else if (data.type === "room_admission_status") {
+          if (data.status === "accepted") {
+            callbacksRef.current.showSnackbar?.(`Your admission to #${data.room_title} was accepted! 🎉`, "success");
+            callbacksRef.current.loadRooms?.();
+          } else {
+            callbacksRef.current.showSnackbar?.(`Admission request to #${data.room_title} was declined.`, "info");
+          }
         } else if (data.type === "error") {
-          alert(data.message);
+          callbacksRef.current.showSnackbar?.(data.message, "error");
         } else if (data.type === "typing_status") {
           if (data.is_typing) {
             setTypingUsers(prev => ({ ...prev, [data.user_id]: data.name }));
@@ -533,8 +673,28 @@ export default function App() {
       } catch (e) { }
     };
 
-    return () => ws.close();
-  }, [token, activeTab.type, activeTab.id, loadMateConversation, showSnackbar, refreshPendingCount]);
+    ws.onclose = () => {
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+      }
+    };
+
+    return () => {
+      ws.close();
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+      }
+    };
+  }, [token]);
+
+  // Keep WebSocket joined to active room across tab changes without reconnecting socket
+  useEffect(() => {
+    if (activeTab.type === "room" && activeTab.id) {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ action: "join_room", room_slug: activeTab.id }));
+      }
+    }
+  }, [activeTab.type, activeTab.id]);
 
   // Expiration Date Parser (guarantees UTC handling across timezones)
   const parseExpirationDate = useCallback((expStr) => {
@@ -632,7 +792,8 @@ export default function App() {
         wsRef.current.send(JSON.stringify({ action: "join_room", room_slug: id }));
       }
       try {
-        const res = await fetch(`${API_BASE}/api/rooms/${id}/messages`);
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await fetch(`${API_BASE}/api/rooms/${id}/messages`, { headers });
         if (res.ok) setMessages(await res.json());
       } catch (e) { }
     } else {
@@ -649,7 +810,11 @@ export default function App() {
   const handleSendMessage = (e) => {
     e.preventDefault();
     const content = inputMessage.trim();
-    if (!content || wsRef.current?.readyState !== WebSocket.OPEN) return;
+    if (!content) return;
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      showSnackbar("Connecting to chat server, please wait a moment...", "info");
+      return;
+    }
 
     if (activeTab.type === "room") {
       wsRef.current.send(JSON.stringify({ action: "send_room_message", room_slug: activeTab.id, content }));
@@ -800,11 +965,49 @@ export default function App() {
   // ──────────────────────────────────────────────────────────────
   // MATE ACTIONS
   // ──────────────────────────────────────────────────────────────
+  const fetchMateTrends = useCallback(async () => {
+    setIsLoadingTrends(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/mate/trends?order=asc`);
+      if (res.ok) {
+        const data = await res.json();
+        setMateTrends(data);
+      }
+    } catch (e) {
+      console.error("Failed to load mate trends:", e);
+    } finally {
+      setIsLoadingTrends(false);
+    }
+  }, []);
+
+  const toggleTrendInterest = (topic) => {
+    const cleanTopic = topic.trim().toLowerCase();
+    const current = mateInterestsInput
+      .split(",")
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean);
+
+    let updated;
+    if (current.includes(cleanTopic)) {
+      updated = current.filter(t => t !== cleanTopic);
+    } else {
+      updated = [...current, cleanTopic];
+    }
+    setMateInterestsInput(updated.join(", "));
+  };
+
+  useEffect(() => {
+    if (viewMode === "mate") {
+      fetchMateTrends();
+    }
+  }, [viewMode, fetchMateTrends]);
+
   const handleNavigateMate = () => {
     if (currentUser?.provider === "demo") {
       handleInstantPassRedirect("mate");
       return;
     }
+    fetchMateTrends();
     if (mateConversationId && mateConversationData?.status === "active") {
       setViewMode("mate_chat");
     } else {
@@ -968,34 +1171,119 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/rooms`, {
         method: "POST", headers: authHeaders(),
-        body: JSON.stringify({ slug: newRoomSlug.trim().toLowerCase(), title: newRoomTitle.trim(), description: newRoomDesc.trim() || undefined })
+        body: JSON.stringify({
+          slug: newRoomSlug.trim().toLowerCase(),
+          title: newRoomTitle.trim(),
+          description: newRoomDesc.trim() || undefined,
+          is_private: newRoomIsPrivate
+        })
       });
       if (res.ok) {
         const created = await res.json();
         setRooms(prev => [...prev, created]);
         setIsCreateRoomOpen(false);
-        setNewRoomSlug(""); setNewRoomTitle(""); setNewRoomDesc("");
+        setNewRoomSlug(""); setNewRoomTitle(""); setNewRoomDesc(""); setNewRoomIsPrivate(false);
         selectTab("room", created.slug, created);
+        showSnackbar(`Room #${created.slug} launched!`, "success");
       } else {
         const err = await res.json();
-        alert(err.detail || "Could not create room");
+        showSnackbar(err.detail || "Could not create room", "error");
       }
-    } catch (e) { alert("Network error"); }
+    } catch (e) { showSnackbar("Network error creating room", "error"); }
   };
 
   // ──────────────────────────────────────────────────────────────
   // ROOM SETTINGS (Moderator Actions)
   // ──────────────────────────────────────────────────────────────
+  const loadRoomAdmissions = async (slug) => {
+    if (!slug || !token) return;
+    setIsLoadingAdmissions(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/rooms/${slug}/admissions`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setRoomAdmissions(data);
+      }
+    } catch (e) { }
+    setIsLoadingAdmissions(false);
+  };
+
+  const handleRespondAdmission = async (slug, admissionId, status) => {
+    if (!slug || !admissionId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/rooms/${slug}/admissions/${admissionId}/respond`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ status })
+      });
+      if (res.ok) {
+        showSnackbar(`Admission request ${status}!`, "success");
+        setRoomAdmissions(prev => prev.filter(a => a.id !== admissionId));
+        setNotificationsList(prev => prev.filter(n => n.raw_id !== admissionId));
+        loadRooms();
+        fetchNotifications();
+      } else {
+        const err = await res.json();
+        showSnackbar(err.detail || "Could not respond to admission", "error");
+      }
+    } catch (e) {
+      showSnackbar("Network error", "error");
+    }
+  };
+
+  const handleCopyInviteLink = (room) => {
+    const code = room?.invite_code;
+    const url = `${window.location.origin}/?invite=${room?.slug}&code=${code || ""}`;
+    navigator.clipboard.writeText(url);
+    setHasCopiedInvite(true);
+    showSnackbar("Invitation link copied to clipboard!", "success");
+    setTimeout(() => setHasCopiedInvite(false), 2500);
+  };
+
+  const handleJoinViaInvite = async () => {
+    if (!inviteFromUrl) return;
+    if (currentUser?.provider === "demo") {
+      handleInstantPassRedirect("invite");
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/rooms/${inviteFromUrl.slug}/join`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ code: inviteFromUrl.code })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.status === "joined") {
+          showSnackbar(data.message || "Joined room!", "success");
+          setInviteFromUrl(null);
+          await loadRooms();
+          const targetRoom = rooms.find(r => r.slug === inviteFromUrl.slug);
+          if (targetRoom) selectTab("room", targetRoom.slug, targetRoom);
+        } else if (data.status === "pending") {
+          showSnackbar(data.message || "Admission requested!", "info");
+          setInviteAdmissionStatus("pending");
+        }
+      } else {
+        showSnackbar(data.detail || "Could not join room", "error");
+      }
+    } catch (e) {
+      showSnackbar("Network error joining room", "error");
+    }
+  };
+
   const openRoomSettings = async (room) => {
     setRoomSettingsData(room);
     setEditRoomTitle(room.title);
     setEditRoomDesc(room.description || "");
+    setEditRoomIsPrivate(Boolean(room.is_private));
     setRoomSettingsTab("info");
     setAddModUserId("");
     setAddModSearch("");
     setAddModResults([]);
     setIsSearchingMods(false);
     setRoomSettingsOpen(true);
+    loadRoomAdmissions(room.slug);
   };
 
   const handleSaveRoomInfo = async (e) => {
@@ -1004,29 +1292,40 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/rooms/${roomSettingsData.slug}`, {
         method: "PUT", headers: authHeaders(),
-        body: JSON.stringify({ title: editRoomTitle, description: editRoomDesc })
+        body: JSON.stringify({
+          title: editRoomTitle,
+          description: editRoomDesc,
+          is_private: editRoomIsPrivate
+        })
       });
       if (res.ok) {
         const updated = await res.json();
         setRooms(prev => prev.map(r => r.slug === updated.slug ? updated : r));
         setRoomSettingsData(updated);
         setActiveTab(prev => prev.id === updated.slug ? { ...prev, data: updated } : prev);
+        showSnackbar("Room settings saved!", "success");
       } else {
         const err = await res.json();
-        alert(err.detail || "Could not update room");
+        showSnackbar(err.detail || "Could not update room", "error");
       }
-    } catch (e) { alert("Network error"); }
+    } catch (e) { showSnackbar("Network error", "error"); }
   };
 
-  const handleDeleteRoom = async () => {
-    if (!roomSettingsData) return;
-    if (!window.confirm(`Delete room #${roomSettingsData.slug}? This cannot be undone.`)) return;
+  const handleDeleteRoom = async (roomObj) => {
+    const targetRoom = roomObj || roomSettingsData;
+    if (!targetRoom) return;
+    if (!window.confirm(`Delete room #${targetRoom.slug}? This cannot be undone.`)) return;
     try {
-      const res = await fetch(`${API_BASE}/api/rooms/${roomSettingsData.slug}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/api/rooms/${targetRoom.slug}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
-        setRooms(prev => prev.filter(r => r.slug !== roomSettingsData.slug));
+        showSnackbar(`Room #${targetRoom.slug} deleted`);
+        setRooms(prev => prev.filter(r => r.slug !== targetRoom.slug));
         setRoomSettingsOpen(false);
-        setActiveTab({ type: "room", id: null, data: null });
+        setViewingRoomInfo(null);
+        setChatMenuOpen(false);
+        if (activeTab.type === "room" && activeTab.id === targetRoom.slug) {
+          setActiveTab({ type: "room", id: null, data: null });
+        }
         setMessages([]);
       } else {
         const err = await res.json();
@@ -1106,15 +1405,16 @@ export default function App() {
     } catch (e) { alert("Network error"); }
   };
 
-  const openRoomInfo = async (room) => {
-    setViewingRoomInfo(room);
+  const loadRoomParticipants = async (slug) => {
     setLoadingRoomInfo(true);
     try {
-      const res = await fetch(`${API_BASE}/api/rooms/${room.slug}/participants`, {
+      const res = await fetch(`${API_BASE}/api/rooms/${slug}/participants`, {
         headers: authHeaders()
       });
       if (res.ok) {
-        setRoomParticipants(await res.json());
+        const data = await res.json();
+        setRoomParticipants(data);
+        return data;
       } else {
         setRoomParticipants([]);
       }
@@ -1123,7 +1423,158 @@ export default function App() {
     } finally {
       setLoadingRoomInfo(false);
     }
+    return [];
   };
+
+  const openRoomInfo = async (room) => {
+    setViewingRoomInfo(room);
+    loadRoomParticipants(room.slug);
+  };
+
+  const handleRemoveParticipant = async (slug, userId, userName) => {
+    if (!window.confirm(`Are you sure you want to remove ${userName || "this participant"} from the room?`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/rooms/${slug}/members/remove`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ user_id: userId })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showSnackbar(`Removed ${userName || "participant"} from the room`);
+        setRoomParticipants(prev => prev.filter(p => p.id !== userId));
+      } else {
+        alert(data.detail || "Failed to remove participant");
+      }
+    } catch (e) {
+      alert("Network error");
+    }
+  };
+
+  const handleExitRoom = async (room) => {
+    if (!room) return;
+    if (!window.confirm(`Are you sure you want to exit #${room.title}? You will need to rejoin or request admission to participate again.`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/rooms/${room.slug}/exit`, {
+        method: "POST",
+        headers: authHeaders()
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showSnackbar(`You have exited #${room.title}`);
+        setViewingRoomInfo(null);
+        setRoomSettingsOpen(false);
+        setChatMenuOpen(false);
+        if (activeTab.type === "room" && activeTab.data?.slug === room.slug) {
+          setActiveTab({ type: "direct", id: null, data: null });
+        }
+        loadRooms();
+      } else {
+        alert(data.detail || "Failed to exit room");
+      }
+    } catch (e) {
+      alert("Network error");
+    }
+  };
+
+  const handleRemoveFriend = async (friendId, friendName) => {
+    if (!window.confirm(`Are you sure you want to remove ${friendName || "this friend"} from your friends?`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/friends/${friendId}/remove`, {
+        method: "POST",
+        headers: authHeaders()
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showSnackbar(`Removed ${friendName || "friend"} from friends`);
+        setProfileData(prev => {
+          if (!prev) return prev;
+          const updatedFriends = (prev.friends || []).filter(f => f.id !== friendId);
+          return {
+            ...prev,
+            friends: updatedFriends,
+            friends_count: Math.max(0, (prev.friends_count || 1) - 1),
+            friendship_status: prev.user?.id === friendId ? "none" : prev.friendship_status
+          };
+        });
+        refreshDirectConversations();
+      } else {
+        alert(data.detail || "Failed to remove friend");
+      }
+    } catch (e) {
+      alert("Network error");
+    }
+  };
+
+  const handleClearChat = async () => {
+    if (activeTab.type === "direct" && activeDirectUser) {
+      if (!window.confirm(`Are you sure you want to clear your chat history with ${activeDirectUser.name}?`)) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/direct/${activeDirectUser.id}/messages`, {
+          method: "DELETE",
+          headers: authHeaders()
+        });
+        if (res.ok) {
+          setMessages([]);
+          setChatMenuOpen(false);
+          showSnackbar("Chat history cleared");
+        } else {
+          alert("Failed to clear chat");
+        }
+      } catch (e) {
+        alert("Network error");
+      }
+    } else if (activeTab.type === "room" && activeRoom) {
+      if (!isCurrentUserModerator(activeRoom)) {
+        alert("Only room moderators can clear the room chat history.");
+        return;
+      }
+      if (!window.confirm(`Are you sure you want to clear all message history in #${activeRoom.title}? This cannot be undone.`)) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/rooms/${activeRoom.slug}/messages`, {
+          method: "DELETE",
+          headers: authHeaders()
+        });
+        if (res.ok) {
+          setMessages([]);
+          setChatMenuOpen(false);
+          showSnackbar("Room chat history cleared");
+        } else {
+          alert("Failed to clear room chat");
+        }
+      } catch (e) {
+        alert("Network error");
+      }
+    }
+  };
+
+  const handleDeleteDirectChat = async () => {
+    if (activeTab.type !== "direct" || !activeDirectUser) return;
+    if (!window.confirm(`Are you sure you want to delete this chat with ${activeDirectUser.name}?`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/direct/${activeDirectUser.id}/messages`, {
+        method: "DELETE",
+        headers: authHeaders()
+      });
+      if (res.ok) {
+        setMessages([]);
+        setChatMenuOpen(false);
+        setActiveTab({ type: "direct", id: null, data: null });
+        refreshDirectConversations();
+        showSnackbar("Chat deleted");
+      } else {
+        alert("Failed to delete chat");
+      }
+    } catch (e) {
+      alert("Network error");
+    }
+  };
+
+  useEffect(() => {
+    if (viewMode === "mate" && token) {
+      fetchMateTrends();
+    }
+  }, [viewMode, token, fetchMateTrends]);
 
   const handleRoomPicUpload = async (file) => {
     if (!file || !roomSettingsData) return;
@@ -1218,6 +1669,238 @@ export default function App() {
     activeTab.id
   );
 
+  // Unread badge counters for mobile bottom navigation
+  const totalDirectUnreadCount = Object.entries(unreadCounts)
+    .filter(([k]) => k.startsWith("direct_"))
+    .reduce((sum, [, count]) => sum + (count || 0), 0);
+
+  const totalRoomUnreadCount = Object.entries(unreadCounts)
+    .filter(([k]) => k.startsWith("room_"))
+    .reduce((sum, [, count]) => sum + (count || 0), 0);
+
+  // Notification Bell & Dropdown Box
+  const renderNotificationBell = (mode = "topright") => {
+    const isOpen = notificationsOpenMode === mode;
+    const isSidebar = mode === "sidebar";
+    const wrapperClass = isSidebar
+      ? "notification-btn-wrapper notification-side-panel"
+      : "notification-btn-wrapper notification-desktop-mode";
+
+    return (
+      <div className={wrapperClass} ref={isSidebar ? notificationsSidebarRef : notificationsTopRightRef}>
+        <button
+          type="button"
+          className={`btn-icon-sm notification-trigger-btn ${isOpen ? "active" : ""}`}
+          title="Notifications"
+          onClick={() => toggleNotifications(mode)}
+          aria-label="Notifications"
+        >
+          <Bell size={16} />
+          {unreadNotificationsCount > 0 && (
+            <span className="notification-badge" title={`${unreadNotificationsCount} notifications`}>
+              {unreadNotificationsCount > 9 ? "9+" : unreadNotificationsCount}
+            </span>
+          )}
+        </button>
+
+        {isOpen && (
+          <div className="notification-dropdown">
+            <div className="notification-dropdown-header">
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Bell size={15} />
+                <span style={{ fontWeight: 700, fontSize: "0.88rem" }}>Notifications</span>
+              </div>
+              <button
+                type="button"
+                className="btn-icon-xs"
+                onClick={() => setNotificationsOpenMode(null)}
+                title="Close"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+          <div className="notification-dropdown-list">
+            {notificationsList.length === 0 ? (
+              <div className="notification-empty">
+                <Bell size={26} style={{ opacity: 0.25, marginBottom: "8px" }} />
+                <p style={{ margin: 0, fontWeight: 600, fontSize: "0.86rem" }}>No notifications</p>
+                <span style={{ fontSize: "0.74rem", color: "var(--text-dim)", marginTop: "2px" }}>You are all caught up!</span>
+              </div>
+            ) : (
+              notificationsList.map(item => (
+                <div key={item.id} className="notification-item">
+                  <img
+                    src={avatarSrc({ avatar: item.avatar, username: item.user_username, name: item.user_name })}
+                    alt={item.user_name || "User"}
+                    className="notification-item-avatar"
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "6px" }}>
+                      <span style={{ fontWeight: 600, fontSize: "0.84rem" }}>{item.title}</span>
+                      <span style={{ fontSize: "0.68rem", color: "var(--text-dim)", whiteSpace: "nowrap" }}>
+                        {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: "0.76rem", color: "var(--text-muted)", margin: "2px 0 6px", lineHeight: "1.3" }}>
+                      {item.description}
+                    </p>
+                    {item.type === "friend_request" && (
+                      <div className="notification-item-actions">
+                        <button
+                          type="button"
+                          className="btn-primary-xs"
+                          onClick={() => handleRespondFriendRequest(item.raw_id, "accepted")}
+                        >
+                          <Check size={12} /> Accept
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary-xs"
+                          onClick={() => handleRespondFriendRequest(item.raw_id, "ignored")}
+                        >
+                          <X size={12} /> Ignore
+                        </button>
+                      </div>
+                    )}
+                    {item.type === "room_admission" && (
+                      <div className="notification-item-actions">
+                        <button
+                          type="button"
+                          className="btn-primary-xs"
+                          onClick={() => handleRespondAdmission(item.room_slug, item.raw_id, "accepted")}
+                        >
+                          <Check size={12} /> Accept
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary-xs"
+                          onClick={() => handleRespondAdmission(item.room_slug, item.raw_id, "rejected")}
+                        >
+                          <X size={12} /> Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+  // Mobile Bottom Navigation Bar Component
+  const renderMobileBottomNav = () => (
+    <nav className="mobile-bottom-nav mobile-only" aria-label="Mobile Navigation">
+      <button
+        type="button"
+        className={`mobile-nav-btn ${viewMode === "chat" && mobileTab === "chat" && !viewingProfileId && !roomSettingsOpen && !viewingRoomInfo ? "active" : ""}`}
+        onClick={() => {
+          setViewingProfileId(null);
+          setRoomSettingsOpen(false);
+          setViewingRoomInfo(null);
+          setViewMode("chat");
+          setMobileTab("chat");
+          setActiveTab({ type: "direct", id: null, data: null });
+        }}
+        title="Chats"
+        aria-label="Chats"
+      >
+        <div className="mobile-nav-icon-wrap">
+          <MessageSquare size={21} />
+          {totalDirectUnreadCount > 0 && (
+            <span className="mobile-nav-badge">
+              {totalDirectUnreadCount > 99 ? "99+" : totalDirectUnreadCount}
+            </span>
+          )}
+        </div>
+      </button>
+
+      <button
+        type="button"
+        className={`mobile-nav-btn ${viewMode === "chat" && mobileTab === "announcements" && !viewingProfileId && !roomSettingsOpen && !viewingRoomInfo ? "active" : ""}`}
+        onClick={() => {
+          setViewingProfileId(null);
+          setRoomSettingsOpen(false);
+          setViewingRoomInfo(null);
+          setViewMode("chat");
+          setMobileTab("announcements");
+          setActiveTab({ type: "room", id: null, data: null });
+        }}
+        title="Announcements"
+        aria-label="Announcements"
+      >
+        <div className="mobile-nav-icon-wrap">
+          <Megaphone size={21} />
+          {totalRoomUnreadCount > 0 && (
+            <span className="mobile-nav-badge">
+              {totalRoomUnreadCount > 99 ? "99+" : totalRoomUnreadCount}
+            </span>
+          )}
+        </div>
+      </button>
+
+      <button
+        type="button"
+        className={`mobile-nav-btn ${viewMode === "explore" && !viewingProfileId ? "active" : ""}`}
+        onClick={() => {
+          setViewingProfileId(null);
+          setRoomSettingsOpen(false);
+          setViewingRoomInfo(null);
+          setViewMode("explore");
+          loadExploreUsers(searchQuery);
+        }}
+        title="Explore"
+        aria-label="Explore"
+      >
+        <div className="mobile-nav-icon-wrap">
+          <Search size={21} />
+        </div>
+      </button>
+
+      <button
+        type="button"
+        className={`mobile-nav-btn ${(viewMode === "mate" || viewMode === "mate_chat") && !viewingProfileId ? "active" : ""}`}
+        onClick={() => {
+          setViewingProfileId(null);
+          setRoomSettingsOpen(false);
+          setViewingRoomInfo(null);
+          handleNavigateMate();
+        }}
+        title="Mate"
+        aria-label="Mate"
+      >
+        <div className="mobile-nav-icon-wrap">
+          <Sparkles size={21} />
+        </div>
+      </button>
+
+      <button
+        type="button"
+        className={`mobile-nav-btn ${viewingProfileId === currentUser?.id ? "active" : ""}`}
+        onClick={() => {
+          setRoomSettingsOpen(false);
+          setViewingRoomInfo(null);
+          openUserProfile(currentUser.id, pendingRequestsCount > 0 ? "requests" : "profile");
+        }}
+        title="Profile"
+        aria-label="Profile"
+      >
+        <div className="mobile-nav-icon-wrap" style={{ position: "relative" }}>
+          <div className="mobile-nav-avatar">
+            <img src={avatarSrc(currentUser)} alt={currentUser?.name || "Profile"} />
+          </div>
+          {pendingRequestsCount > 0 && (
+            <span className="attention-blue-dot mobile-profile-dot" title="Attention required in profile" />
+          )}
+        </div>
+      </button>
+    </nav>
+  );
+
   return (
     <div className={`app-container ${isPageActive ? "has-active-page" : "no-active-page"}`}>
       {/* ── SIDEBAR ── */}
@@ -1225,10 +1908,11 @@ export default function App() {
         <div className="brand-header">
           {!isSidebarCollapsed ? (
             <>
-              <div className="brand-logo" onClick={() => setViewMode("chat")}>
+              <div className="brand-logo" onClick={() => { setViewMode("chat"); setMobileTab("chat"); setActiveTab({ type: "direct", id: null, data: null }); setViewingProfileId(null); }}>
                 <h1 className="brand-gradient">PairUP</h1>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                {renderNotificationBell("sidebar")}
                 <button
                   type="button"
                   className="sidebar-theme-toggle"
@@ -1241,7 +1925,7 @@ export default function App() {
                 <button className="btn-section-action" title="About PairUP & Features" onClick={() => setShowLandingPage(true)}>
                   <Info size={17} />
                 </button>
-                <button className="btn-section-action" title="Explore Friends" onClick={() => { setViewMode("explore"); loadExploreUsers(searchQuery); }}>
+                <button className="btn-section-action desktop-only" title="Explore Friends" onClick={() => { setViewMode("explore"); loadExploreUsers(searchQuery); }}>
                   <Users size={17} />
                 </button>
                 <button className="btn-section-action sidebar-collapse-btn" title="Collapse sidebar" onClick={toggleSidebar}>
@@ -1254,6 +1938,7 @@ export default function App() {
               <button className="btn-section-action sidebar-collapse-btn" title="Expand sidebar" onClick={toggleSidebar}>
                 <PanelLeftOpen size={19} />
               </button>
+              {renderNotificationBell("sidebar")}
               <button
                 type="button"
                 className="sidebar-theme-toggle"
@@ -1270,8 +1955,8 @@ export default function App() {
           )}
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="nav-tab-group">
+        {/* Navigation Tabs (Desktop only) */}
+        <div className="nav-tab-group desktop-only">
           <button
             type="button"
             className={`nav-tab-btn ${viewMode === "chat" ? "active" : ""}`}
@@ -1307,11 +1992,12 @@ export default function App() {
         </div>
 
         <div className="sidebar-scroll">
-          {/* Chat Rooms */}
-          <div>
+          {/* Chat Rooms / Announcements */}
+          <div className={`sidebar-rooms-section ${mobileTab !== "announcements" ? "mobile-hidden" : ""}`}>
             {!isSidebarCollapsed ? (
               <div className="section-label">
-                <span>Rooms</span>
+                <span className="desktop-only">Rooms</span>
+                <span className="mobile-only">Announcements</span>
                 <button className="btn-section-action" title="Create Room" onClick={() => setIsCreateRoomOpen(true)}>
                   <Plus size={15} />
                 </button>
@@ -1328,7 +2014,8 @@ export default function App() {
             {rooms.length === 0 ? (
               !isSidebarCollapsed ? (
                 <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
-                  No rooms yet. Be the first to create one!
+                  <span className="desktop-only">No rooms yet. Be the first to create one!</span>
+                  <span className="mobile-only">No announcements yet. Be the first to create one!</span>
                 </div>
               ) : null
             ) : (
@@ -1354,6 +2041,7 @@ export default function App() {
                       <span className="nav-item-title">
                         {room.title}
                       </span>
+                      {room.is_private && <Lock size={12} style={{ opacity: 0.5, flexShrink: 0 }} title="Private Room" />}
                       {isMod && <Crown size={12} className="mod-crown-icon" title="Moderator" />}
                       {roomUnread > 0 && (
                         <span className="unread-counter-badge" title={`${roomUnread} unread message${roomUnread > 1 ? "s" : ""}`}>
@@ -1364,10 +2052,14 @@ export default function App() {
                         <button
                           type="button"
                           className="btn-icon-sm"
+                          style={{ position: "relative" }}
                           title="Room Settings"
                           onClick={e => { e.stopPropagation(); openRoomSettings(room); }}
                         >
                           <Settings size={13} />
+                          {((room.pending_admissions_count > 0) || notificationsList.some(n => n.type === "room_admission" && n.room_slug === room.slug)) && (
+                            <span className="attention-blue-dot" style={{ top: -2, right: -2 }} title="Attention required: pending admissions" />
+                          )}
                         </button>
                       )}
                     </div>
@@ -1398,7 +2090,7 @@ export default function App() {
           </div>
 
           {/* Direct Messages */}
-          <div>
+          <div className={`sidebar-dms-section ${mobileTab !== "chat" ? "mobile-hidden" : ""}`}>
             {!isSidebarCollapsed ? (
               <div className="section-label">
                 <span>Direct Messages</span>
@@ -1469,8 +2161,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* User Profile Bar */}
-        <div className="user-profile-bar">
+        {/* User Profile Bar (Desktop Only) */}
+        <div className="user-profile-bar desktop-only">
           {!isSidebarCollapsed ? (
             <>
               <div className="profile-info" onClick={() => openUserProfile(currentUser.id, pendingRequestsCount > 0 ? "requests" : "profile")}>
@@ -1478,9 +2170,7 @@ export default function App() {
                   <img src={avatarSrc(currentUser)} alt={currentUser.name} />
                   <span className="status-dot online" />
                   {pendingRequestsCount > 0 && (
-                    <span className="badge-count" style={{ position: "absolute", top: -4, right: -4, fontSize: "0.62rem", padding: "1px 5px" }}>
-                      {pendingRequestsCount}
-                    </span>
+                    <span className="attention-blue-dot profile-dot" title="Attention required in profile" />
                   )}
                 </div>
                 <div className="profile-details">
@@ -1503,9 +2193,7 @@ export default function App() {
                 <img src={avatarSrc(currentUser)} alt={currentUser.name} />
                 <span className="status-dot online" />
                 {pendingRequestsCount > 0 && (
-                  <span className="badge-count" style={{ position: "absolute", top: -4, right: -4, fontSize: "0.62rem", padding: "1px 5px" }}>
-                    {pendingRequestsCount}
-                  </span>
+                  <span className="attention-blue-dot profile-dot" title="Attention required in profile" />
                 )}
               </div>
               <button className="btn-icon" title="Log Out" onClick={handleLogout}>
@@ -1514,6 +2202,9 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* Mobile Bottom Navigation Bar */}
+        {renderMobileBottomNav()}
       </aside>
 
       {/* ── MAIN STAGE / PAGES ── */}
@@ -1537,6 +2228,7 @@ export default function App() {
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {renderNotificationBell()}
               <button
                 type="button"
                 className="btn-icon"
@@ -1686,9 +2378,20 @@ export default function App() {
                         ) : (
                           <>
                             {profileData.friendship_status === "accepted" ? (
-                              <button className="btn-primary" style={{ flex: 1 }} onClick={() => { setViewingProfileId(null); selectTab("direct", profileData.user.id, profileData.user); }}>
-                                <MessageSquare size={15} /> Chat
-                              </button>
+                              <div style={{ display: "flex", gap: "8px", width: "100%" }}>
+                                <button className="btn-primary" style={{ flex: 1 }} onClick={() => { setViewingProfileId(null); selectTab("direct", profileData.user.id, profileData.user); }}>
+                                  <MessageSquare size={15} /> Chat
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-danger"
+                                  style={{ padding: "8px 14px", display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "0.85rem" }}
+                                  onClick={() => handleRemoveFriend(profileData.user.id, profileData.user.name)}
+                                  title="Remove Friend"
+                                >
+                                  <UserMinus size={15} /> Remove
+                                </button>
+                              </div>
                             ) : profileData.friendship_status === "pending_sent" ? (
                               <button className="btn-secondary" style={{ flex: 1 }} disabled><Clock size={15} /> Request Pending</button>
                             ) : profileData.friendship_status === "pending_received" ? (
@@ -1729,6 +2432,27 @@ export default function App() {
                           </button>
                         </div>
                       )}
+
+                      {/* Log out option inside profile */}
+                      {viewingProfileId === currentUser.id && (
+                        <div style={{ marginTop: "12px", padding: "12px 14px", background: "var(--bg-input)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div>
+                            <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--text-main)" }}>Account Session</div>
+                            <div style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>
+                              Signed in as @{currentUser.username}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-danger"
+                            style={{ padding: "7px 14px", fontSize: "0.82rem", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                            onClick={handleLogout}
+                          >
+                            <LogOut size={15} />
+                            <span>Log Out</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1761,12 +2485,24 @@ export default function App() {
                               </div>
                               <div style={{ display: "flex", gap: "6px" }}>
                                 <button
+                                  type="button"
                                   className="btn-primary"
                                   style={{ padding: "5px 12px", fontSize: "0.78rem" }}
                                   onClick={() => { setViewingProfileId(null); selectTab("direct", f.id, f); }}
                                 >
                                   <MessageSquare size={13} /> Chat
                                 </button>
+                                {viewingProfileId === currentUser.id && (
+                                  <button
+                                    type="button"
+                                    className="btn-danger"
+                                    style={{ padding: "5px 10px", fontSize: "0.78rem", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                                    onClick={() => handleRemoveFriend(f.id, f.name)}
+                                    title="Remove Friend"
+                                  >
+                                    <UserMinus size={13} /> Remove
+                                  </button>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -1836,6 +2572,7 @@ export default function App() {
               )}
             </div>
           </div>
+          {renderMobileBottomNav()}
         </main>
       ) : roomSettingsOpen && roomSettingsData ? (
         <main className="page-stage room-settings-page-stage">
@@ -1860,11 +2597,52 @@ export default function App() {
             <div className="page-card">
               {/* Settings Tabs */}
               <div className="settings-tabs">
-                {["info", "moderators"].map(tab => (
-                  <button key={tab} className={`settings-tab ${roomSettingsTab === tab ? "active" : ""}`} onClick={() => setRoomSettingsTab(tab)}>
-                    {tab === "info" ? "Room Info" : "Moderators"}
-                  </button>
-                ))}
+                <button
+                  type="button"
+                  className={`settings-tab ${roomSettingsTab === "info" ? "active" : ""}`}
+                  onClick={() => setRoomSettingsTab("info")}
+                >
+                  Room Info
+                </button>
+                <button
+                  type="button"
+                  className={`settings-tab ${roomSettingsTab === "moderators" ? "active" : ""}`}
+                  onClick={() => setRoomSettingsTab("moderators")}
+                >
+                  Moderators
+                </button>
+                <button
+                  type="button"
+                  className={`settings-tab ${roomSettingsTab === "admissions" ? "active" : ""}`}
+                  onClick={() => {
+                    setRoomSettingsTab("admissions");
+                    loadRoomAdmissions(roomSettingsData.slug);
+                  }}
+                  style={{ position: "relative" }}
+                >
+                  <span>Admissions</span>
+                  {roomAdmissions.length > 0 && (
+                    <span className="badge-count" style={{ marginLeft: "6px", fontSize: "0.7rem", padding: "1px 6px" }}>
+                      {roomAdmissions.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className={`settings-tab ${roomSettingsTab === "participants" ? "active" : ""}`}
+                  onClick={() => {
+                    setRoomSettingsTab("participants");
+                    loadRoomParticipants(roomSettingsData.slug);
+                  }}
+                  style={{ position: "relative" }}
+                >
+                  <span>Participants</span>
+                  {roomParticipants.length > 0 && (
+                    <span className="badge-count" style={{ marginLeft: "6px", fontSize: "0.7rem", padding: "1px 6px" }}>
+                      {roomParticipants.length}
+                    </span>
+                  )}
+                </button>
               </div>
 
               {roomSettingsTab === "info" && (
@@ -1896,6 +2674,68 @@ export default function App() {
                       <label className="profile-field-label">Description</label>
                       <textarea rows={3} value={editRoomDesc} onChange={e => setEditRoomDesc(e.target.value)} className="chat-input profile-field-val" style={{ width: "100%", marginTop: "4px", resize: "none" }} placeholder="Describe what this room is about..." />
                     </div>
+
+                    <div>
+                      <label className="profile-field-label">Room Visibility</label>
+                      <div className="room-visibility-selector" style={{ marginTop: "6px" }}>
+                        <div
+                          className={`visibility-option ${!editRoomIsPrivate ? "active" : ""}`}
+                          onClick={() => setEditRoomIsPrivate(false)}
+                        >
+                          <div className="visibility-icon-wrap">
+                            <Globe size={18} />
+                          </div>
+                          <div className="visibility-info">
+                            <span className="visibility-title">Public Room</span>
+                            <span className="visibility-desc">Anyone can view, join, and chat directly.</span>
+                          </div>
+                        </div>
+                        <div
+                          className={`visibility-option ${editRoomIsPrivate ? "active" : ""}`}
+                          onClick={() => setEditRoomIsPrivate(true)}
+                        >
+                          <div className="visibility-icon-wrap">
+                            <Lock size={18} />
+                          </div>
+                          <div className="visibility-info">
+                            <span className="visibility-title">Private Room</span>
+                            <span className="visibility-desc">Invitation link required. Moderators approve members.</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {editRoomIsPrivate && (
+                      <div className="room-invite-box">
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--text-main)", display: "flex", alignItems: "center", gap: "6px" }}>
+                            <Share2 size={14} /> Invitation Link
+                          </span>
+                          <span style={{ fontSize: "0.72rem", color: "var(--text-dim)" }}>Shareable link</span>
+                        </div>
+                        <div className="room-invite-link-row">
+                          <input
+                            type="text"
+                            readOnly
+                            className="room-invite-link-input"
+                            value={`${window.location.origin}/?invite=${roomSettingsData.slug}&code=${roomSettingsData.invite_code || ""}`}
+                          />
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            style={{ padding: "8px 14px", fontSize: "0.82rem", display: "inline-flex", alignItems: "center", gap: "6px", flexShrink: 0 }}
+                            onClick={() => handleCopyInviteLink(roomSettingsData)}
+                          >
+                            {hasCopiedInvite ? <Check size={14} /> : <Copy size={14} />}
+                            <span>{hasCopiedInvite ? "Copied" : "Copy Link"}</span>
+                          </button>
+                        </div>
+                        <p style={{ fontSize: "0.74rem", color: "var(--text-dim)", margin: "4px 0 0" }}>
+                          Anyone in the room can share this link to invite others. Moderators accept or reject new admissions.
+                        </p>
+                      </div>
+                    )}
+
                     <button type="submit" className="btn-primary">Save Changes</button>
                   </form>
 
@@ -2014,6 +2854,203 @@ export default function App() {
                 </div>
               )}
 
+              {roomSettingsTab === "admissions" && (
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>Pending Admissions</h4>
+                      <span style={{ fontSize: "0.76rem", color: "var(--text-dim)" }}>
+                        People requesting to join this private room
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: "6px 12px", fontSize: "0.78rem" }}
+                      onClick={() => loadRoomAdmissions(roomSettingsData.slug)}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+
+                  {isLoadingAdmissions ? (
+                    <div style={{ padding: "32px", textAlign: "center", color: "var(--text-dim)" }}>
+                      <Loader2 size={22} className="mate-spin-icon" style={{ display: "inline-block" }} />
+                      <p style={{ marginTop: "8px", fontSize: "0.82rem" }}>Loading admissions...</p>
+                    </div>
+                  ) : roomAdmissions.length === 0 ? (
+                    <div style={{ padding: "36px 16px", textAlign: "center", color: "var(--text-dim)", background: "var(--bg-input)", borderRadius: "var(--radius-md)", border: "1px dashed var(--border-subtle)" }}>
+                      <Shield size={26} style={{ opacity: 0.35, marginBottom: "8px" }} />
+                      <p style={{ margin: 0, fontWeight: 600, fontSize: "0.88rem", color: "var(--text-main)" }}>No pending admissions</p>
+                      <span style={{ fontSize: "0.76rem", color: "var(--text-dim)" }}>New requests will appear here when people click the invitation link.</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      {roomAdmissions.map(adm => (
+                        <div
+                          key={adm.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "12px",
+                            padding: "12px 14px",
+                            background: "var(--bg-input)",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--border-subtle)"
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flex: 1 }}>
+                            <img
+                              src={avatarSrc({ avatar: adm.avatar || adm.user_avatar, username: adm.username || adm.user_username, name: adm.name || adm.user_name })}
+                              alt={adm.name || adm.user_name || "Applicant"}
+                              style={{ width: "38px", height: "38px", borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "1px solid var(--border-subtle)" }}
+                            />
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {adm.name || adm.user_name || "Applicant"}
+                              </div>
+                              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)", display: "flex", alignItems: "center", gap: "6px" }}>
+                                <span>@{adm.username || adm.user_username || "user"}</span>
+                                {(adm.gender || adm.user_gender) && (
+                                  <span style={{ fontSize: "0.68rem", opacity: 0.8, background: "var(--bg-hover)", padding: "1px 6px", borderRadius: "4px" }}>
+                                    {adm.gender || adm.user_gender}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              style={{ padding: "6px 12px", fontSize: "0.78rem", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                              onClick={() => handleRespondAdmission(roomSettingsData.slug, adm.id, "accepted")}
+                            >
+                              <Check size={13} /> Accept
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-danger"
+                              style={{ padding: "6px 12px", fontSize: "0.78rem", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                              onClick={() => handleRespondAdmission(roomSettingsData.slug, adm.id, "rejected")}
+                            >
+                              <X size={13} /> Reject
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {roomSettingsTab === "participants" && (
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>Room Participants</h4>
+                      <span style={{ fontSize: "0.76rem", color: "var(--text-dim)" }}>
+                        Active members and participants of #{roomSettingsData.slug}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: "6px 12px", fontSize: "0.78rem" }}
+                      onClick={() => loadRoomParticipants(roomSettingsData.slug)}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+
+                  {loadingRoomInfo ? (
+                    <div style={{ padding: "32px", textAlign: "center", color: "var(--text-dim)" }}>
+                      <Loader2 size={22} className="mate-spin-icon" style={{ display: "inline-block" }} />
+                      <p style={{ marginTop: "8px", fontSize: "0.82rem" }}>Loading participants...</p>
+                    </div>
+                  ) : roomParticipants.length === 0 ? (
+                    <div style={{ padding: "36px 16px", textAlign: "center", color: "var(--text-dim)", background: "var(--bg-input)", borderRadius: "var(--radius-md)", border: "1px dashed var(--border-subtle)" }}>
+                      <Users size={26} style={{ opacity: 0.35, marginBottom: "8px" }} />
+                      <p style={{ margin: 0, fontWeight: 600, fontSize: "0.88rem", color: "var(--text-main)" }}>No participants found</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      {roomParticipants.map(participant => {
+                        const isCreator = participant.id === roomSettingsData.creator_id;
+                        const isMod = roomSettingsData.moderators?.some(m => m.user_id === participant.id);
+                        const isPrime = roomSettingsData.moderators?.some(m => m.user_id === participant.id && m.is_prime);
+                        const isSelf = participant.id === currentUser?.id;
+                        const canRemove = !isCreator && !isPrime && !isSelf;
+
+                        return (
+                          <div
+                            key={participant.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: "10px",
+                              padding: "10px 12px",
+                              background: "var(--bg-input)",
+                              borderRadius: "10px"
+                            }}
+                          >
+                            <div
+                              style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flex: 1, cursor: "pointer" }}
+                              onClick={() => openUserProfile(participant.id)}
+                            >
+                              <img
+                                src={avatarSrc(participant)}
+                                alt={participant.name}
+                                style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover" }}
+                              />
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontWeight: 600, fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {participant.name} {isSelf && <span style={{ opacity: 0.6, fontSize: "0.75rem" }}>(You)</span>}
+                                </div>
+                                <div style={{ fontSize: "0.74rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                                  @{participant.username}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                              {isCreator ? (
+                                <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.72rem", color: "var(--accent-gold)", fontWeight: 700 }}>
+                                  <Crown size={12} /> Creator
+                                </span>
+                              ) : isMod ? (
+                                <span style={{ fontSize: "0.72rem", color: "var(--accent-primary)", fontWeight: 600 }}>
+                                  Moderator
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: "0.72rem", color: "var(--text-dim)", fontWeight: 500 }}>
+                                  Member
+                                </span>
+                              )}
+
+                              {canRemove && (
+                                <button
+                                  type="button"
+                                  className="btn-danger"
+                                  style={{ padding: "5px 10px", fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                                  onClick={() => handleRemoveParticipant(roomSettingsData.slug, participant.id, participant.name)}
+                                  title="Remove participant from room"
+                                >
+                                  <UserMinus size={13} /> Remove
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* End of Settings */}
             </div>
           </div>
@@ -2060,6 +3097,40 @@ export default function App() {
                   )}
                 </div>
               </div>
+
+              {/* Shareable Invite Link (Private Room) */}
+              {viewingRoomInfo.is_private && viewingRoomInfo.invite_code && (
+                <div className="room-invite-box" style={{ marginBottom: "20px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "0.84rem", fontWeight: 600, color: "var(--text-main)", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Share2 size={14} /> Invite Friends to Room
+                    </span>
+                    <span className="room-private-badge">
+                      <Lock size={11} /> Private Room
+                    </span>
+                  </div>
+                  <p style={{ fontSize: "0.76rem", color: "var(--text-muted)", margin: "4px 0 8px" }}>
+                    Anyone in this room can share this invite link. Room moderators will review requests before admission.
+                  </p>
+                  <div className="room-invite-link-row">
+                    <input
+                      type="text"
+                      readOnly
+                      className="room-invite-link-input"
+                      value={`${window.location.origin}/?invite=${viewingRoomInfo.slug}&code=${viewingRoomInfo.invite_code}`}
+                    />
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ padding: "8px 14px", fontSize: "0.82rem", display: "inline-flex", alignItems: "center", gap: "6px", flexShrink: 0 }}
+                      onClick={() => handleCopyInviteLink(viewingRoomInfo)}
+                    >
+                      {hasCopiedInvite ? <Check size={14} /> : <Copy size={14} />}
+                      <span>{hasCopiedInvite ? "Copied" : "Copy Link"}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Section 1: Moderators List */}
               <div className="room-info-section">
@@ -2143,23 +3214,51 @@ export default function App() {
                             </div>
                             <div className="room-info-user-handle">@{user.username}</div>
                           </div>
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            style={{ padding: "4px 10px", fontSize: "0.75rem" }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openUserProfile(user.id);
-                            }}
-                          >
-                            Profile
-                          </button>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            {isCurrentUserModerator(viewingRoomInfo) && user.id !== viewingRoomInfo.creator_id && !viewingRoomInfo.moderators?.some(m => m.user_id === user.id && m.is_prime) && user.id !== currentUser?.id && (
+                              <button
+                                type="button"
+                                className="btn-danger"
+                                style={{ padding: "4px 8px", fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: "3px" }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveParticipant(viewingRoomInfo.slug, user.id, user.name);
+                                }}
+                                title="Remove participant from room"
+                              >
+                                <UserMinus size={12} /> Remove
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ padding: "4px 10px", fontSize: "0.75rem" }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openUserProfile(user.id);
+                              }}
+                            >
+                              Profile
+                            </button>
+                          </div>
                         </div>
                       ))
                     )}
                   </div>
                 )}
               </div>
+
+              {currentUser?.id !== viewingRoomInfo.creator_id && (
+                <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-subtle)" }}>
+                  <button
+                    type="button"
+                    className="btn-exit-room"
+                    onClick={() => handleExitRoom(viewingRoomInfo)}
+                  >
+                    <LogOut size={16} /> Exit Room
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </main>
@@ -2177,6 +3276,17 @@ export default function App() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>Mate Matchmaking</h2>
               <div className="header-topic">1-on-1 Anonymous matching</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {renderNotificationBell()}
+              <button
+                type="button"
+                className="btn-icon"
+                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                onClick={toggleTheme}
+              >
+                {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+              </button>
             </div>
           </header>
 
@@ -2279,8 +3389,46 @@ export default function App() {
                   Interests are normalized (case-insensitive, trimmed, deduplicated) and compared using Jaccard similarity.
                 </div>
               </div>
+
+              {/* #hot trends suggestions */}
+              <div className="mate-trends-container">
+                <div className="mate-trends-header">
+                  <div className="mate-trends-title-wrap">
+                    <Flame size={15} color="#f97316" />
+                    <span className="mate-trends-title">#hot trends</span>
+                    <span className="mate-trends-badge">Popular</span>
+                  </div>
+                  <span className="mate-trends-hint">Tap to add or remove</span>
+                </div>
+                {isLoadingTrends ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.8rem", color: "var(--text-dim)", padding: "8px 0" }}>
+                    <Loader2 size={14} className="mate-spin-icon" /> Loading trends...
+                  </div>
+                ) : (
+                  <div className="mate-trends-chips-wrap">
+                    {mateTrends.map(trend => {
+                      const currentSelected = mateInterestsInput
+                        .split(",")
+                        .map(s => s.trim().toLowerCase())
+                        .includes(trend.topic.toLowerCase());
+                      return (
+                        <div
+                          key={trend.topic}
+                          className={`mate-trend-chip ${currentSelected ? "selected" : ""}`}
+                          onClick={() => toggleTrendInterest(trend.topic)}
+                          title={`#${trend.topic} (${trend.count} matches) - click to toggle`}
+                        >
+                          <span>#{trend.topic}</span>
+                          <span className="trend-count">{trend.count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
+          {renderMobileBottomNav()}
         </main>
       ) : viewMode === "mate_chat" ? (
         <main className="chat-stage">
@@ -2513,6 +3661,17 @@ export default function App() {
               <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>Explore Friends</h2>
               <div className="header-topic">Discover people and send friend requests to chat</div>
             </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {renderNotificationBell()}
+              <button
+                type="button"
+                className="btn-icon"
+                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                onClick={toggleTheme}
+              >
+                {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+              </button>
+            </div>
           </header>
 
           <div className="page-content-scroll explore-content-scroll">
@@ -2590,6 +3749,7 @@ export default function App() {
               ))}
             </div>
           </div>
+          {renderMobileBottomNav()}
         </main>
       ) : (
         /* ── CHAT STAGE ── */
@@ -2646,22 +3806,41 @@ export default function App() {
               {activeTab.type === "room" && activeRoom && isCurrentUserModerator(activeRoom) && (
                 <button
                   className="btn-secondary"
-                  style={{ fontSize: "0.82rem", padding: "7px 14px" }}
+                  style={{ fontSize: "0.82rem", padding: "7px 14px", position: "relative" }}
                   onClick={() => openRoomSettings(activeRoom)}
                   title="Manage Room"
                 >
                   <Settings size={14} /> <span className="header-btn-text">Manage Room</span>
+                  {((activeRoom.pending_admissions_count > 0) || notificationsList.some(n => n.type === "room_admission" && n.room_slug === activeRoom.slug)) && (
+                    <span className="attention-blue-dot manage-room-dot" title="Pending admissions require attention" />
+                  )}
                 </button>
               )}
-              {activeTab.type === "room" && activeRoom && !isCurrentUserModerator(activeRoom) && (
-                <button
-                  className="btn-secondary"
-                  style={{ fontSize: "0.82rem", padding: "7px 14px" }}
-                  onClick={() => openRoomInfo(activeRoom)}
-                  title="View Room Info"
-                >
-                  <Info size={14} /> <span className="header-btn-text">View Info</span>
-                </button>
+              {activeTab.type === "room" && activeRoom && (
+                <>
+                  {activeRoom.is_private && activeRoom.invite_code && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: "0.82rem", padding: "7px 14px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      onClick={() => handleCopyInviteLink(activeRoom)}
+                      title="Copy Shareable Invite Link"
+                    >
+                      {hasCopiedInvite ? <Check size={14} /> : <Share2 size={14} />}
+                      <span className="header-btn-text">{hasCopiedInvite ? "Copied" : "Invite"}</span>
+                    </button>
+                  )}
+                  {!isCurrentUserModerator(activeRoom) && (
+                    <button
+                      className="btn-secondary"
+                      style={{ fontSize: "0.82rem", padding: "7px 14px" }}
+                      onClick={() => openRoomInfo(activeRoom)}
+                      title="View Room Info"
+                    >
+                      <Info size={14} /> <span className="header-btn-text">View Info</span>
+                    </button>
+                  )}
+                </>
               )}
               {activeTab.type === "direct" && activeDirectUser && (
                 <button
@@ -2673,6 +3852,80 @@ export default function App() {
                   <UserIcon size={14} /> <span className="header-btn-text">View Profile</span>
                 </button>
               )}
+              {activeTab.id && (
+                <div className="chat-menu-wrapper" ref={chatMenuRef}>
+                  <button
+                    type="button"
+                    className="btn-icon-sm"
+                    title="Chat Options"
+                    onClick={() => setChatMenuOpen(prev => !prev)}
+                    style={{ position: "relative" }}
+                  >
+                    <MoreVertical size={16} />
+                  </button>
+
+                  {chatMenuOpen && (
+                    <div className="chat-menu-dropdown">
+                      {activeTab.type === "direct" && (
+                        <>
+                          <button
+                            type="button"
+                            className="chat-menu-item"
+                            onClick={handleClearChat}
+                          >
+                            <Eraser size={14} /> Clear Chat
+                          </button>
+                          <button
+                            type="button"
+                            className="chat-menu-item text-danger"
+                            onClick={handleDeleteDirectChat}
+                          >
+                            <Trash2 size={14} /> Delete Chat
+                          </button>
+                        </>
+                      )}
+
+                      {activeTab.type === "room" && activeRoom && (
+                        <>
+                          {isCurrentUserModerator(activeRoom) && (
+                            <button
+                              type="button"
+                              className="chat-menu-item"
+                              onClick={handleClearChat}
+                            >
+                              <Eraser size={14} /> Clear Room Chat
+                            </button>
+                          )}
+                          {currentUser?.id !== activeRoom.creator_id ? (
+                            <button
+                              type="button"
+                              className="chat-menu-item text-danger"
+                              onClick={() => {
+                                setChatMenuOpen(false);
+                                handleExitRoom(activeRoom);
+                              }}
+                            >
+                              <LogOut size={14} /> Exit Room
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="chat-menu-item text-danger"
+                              onClick={() => {
+                                setChatMenuOpen(false);
+                                handleDeleteRoom(activeRoom);
+                              }}
+                            >
+                              <Trash2 size={14} /> Delete Room
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {renderNotificationBell("topright")}
               <button
                 type="button"
                 className="btn-icon-sm"
@@ -2777,11 +4030,86 @@ export default function App() {
                 <label className="profile-field-label">Description (optional)</label>
                 <input type="text" placeholder="What is this room about?" value={newRoomDesc} onChange={e => setNewRoomDesc(e.target.value)} className="chat-input profile-field-val" style={{ width: "100%", marginTop: "4px" }} />
               </div>
+
+              <div>
+                <label className="profile-field-label">Room Visibility</label>
+                <div className="room-visibility-selector" style={{ marginTop: "6px" }}>
+                  <div
+                    className={`visibility-option ${!newRoomIsPrivate ? "active" : ""}`}
+                    onClick={() => setNewRoomIsPrivate(false)}
+                  >
+                    <div className="visibility-icon-wrap">
+                      <Globe size={18} />
+                    </div>
+                    <div className="visibility-info">
+                      <span className="visibility-title">Public Room</span>
+                      <span className="visibility-desc">Anyone can discover, view, and join this room.</span>
+                    </div>
+                  </div>
+                  <div
+                    className={`visibility-option ${newRoomIsPrivate ? "active" : ""}`}
+                    onClick={() => setNewRoomIsPrivate(true)}
+                  >
+                    <div className="visibility-icon-wrap">
+                      <Lock size={18} />
+                    </div>
+                    <div className="visibility-info">
+                      <span className="visibility-title">Private Room</span>
+                      <span className="visibility-desc">Join by invitation link only. Moderators approve members.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <p style={{ fontSize: "0.76rem", color: "var(--text-dim)" }}>
                 You will be set as the prime moderator of this room.
               </p>
               <button type="submit" className="btn-primary" style={{ marginTop: "4px" }}>Launch Room</button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invite Landing Overlay Modal */}
+      {inviteFromUrl && (
+        <div className="invite-landing-overlay" onClick={() => setInviteFromUrl(null)}>
+          <div className="invite-landing-card" onClick={e => e.stopPropagation()}>
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--bg-input)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <Lock size={26} color="var(--accent-primary)" />
+            </div>
+            <h3 style={{ fontSize: "1.2rem", fontWeight: 700, margin: "0 0 6px" }}>Room Invitation</h3>
+            <p style={{ fontSize: "0.86rem", color: "var(--text-muted)", margin: "0 0 20px" }}>
+              You were invited to join <strong>#{inviteFromUrl.slug}</strong>.
+            </p>
+
+            {inviteAdmissionStatus === "pending" ? (
+              <div style={{ padding: "16px", background: "var(--bg-input)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", marginBottom: "16px" }}>
+                <Clock size={20} style={{ color: "#3b82f6", display: "block", margin: "0 auto 8px" }} />
+                <div style={{ fontWeight: 600, fontSize: "0.88rem", marginBottom: "4px" }}>Request Pending</div>
+                <div style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>
+                  Your request to join has been sent to the room moderators. You will be admitted once they approve!
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{ width: "100%", padding: "11px", fontSize: "0.92rem" }}
+                  onClick={handleJoinViaInvite}
+                >
+                  {token ? "Request to Join Room" : "Sign In & Join Room"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ width: "100%", padding: "10px", fontSize: "0.86rem" }}
+                  onClick={() => setInviteFromUrl(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -2,25 +2,30 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import or_, and_, delete
+from sqlalchemy import or_, and_, delete, func
 from typing import List, Optional
+from datetime import datetime
 import re
 import os
 import uuid
 import shutil
+import secrets
 from pathlib import Path
 
 from app.database import get_db
-from app.models.entities import User, Room, Message, Friendship, RoomModerator, RoomMember
+from app.models.entities import User, Room, Message, Friendship, RoomModerator, RoomMember, RoomAdmission
 from app.schemas.schemas import (
     RoomCreate, RoomOut, RoomUpdate, UserOut, MessageOut,
     FriendRequestCreate, FriendRequestRespond, FriendRequestOut,
     UserProfileDetails, UserUpdate, ModeratorOut,
     AddModeratorPayload, RemoveModeratorPayload,
-    AddRoomMemberPayload, RemoveRoomMemberPayload
+    AddRoomMemberPayload, RemoveRoomMemberPayload,
+    RoomAdmissionOut, RespondAdmissionPayload, JoinRoomPayload,
+    NotificationItem, NotificationListOut
 )
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, get_current_user_optional
 from app.config import settings
+from app.utils.hub import hub
 
 router = APIRouter(prefix="/api", tags=["chat_rest"])
 
@@ -71,15 +76,51 @@ async def _is_prime_moderator(db: AsyncSession, room_id: str, user_id: str) -> b
     return res.scalars().first() is not None
 
 
-async def _build_room_out(room: Room, db: AsyncSession) -> RoomOut:
+async def _build_room_out(room: Room, db: AsyncSession, current_user_id: Optional[str] = None) -> RoomOut:
     res_mods = await db.execute(select(RoomModerator).filter(RoomModerator.room_id == room.id))
     mods = res_mods.scalars().all()
     moderator_list = []
+    is_mod = False
     for m in mods:
         # Eager load user
         res_u = await db.execute(select(User).filter(User.id == m.user_id))
         m.user = res_u.scalars().first()
         moderator_list.append(_moderator_out(m))
+        if current_user_id and m.user_id == current_user_id:
+            is_mod = True
+
+    # Count pending admissions for moderators
+    pending_count = 0
+    if is_mod and room.is_private:
+        res_adm = await db.execute(
+            select(func.count(RoomAdmission.id)).filter(
+                RoomAdmission.room_id == room.id,
+                RoomAdmission.status == "pending"
+            )
+        )
+        pending_count = res_adm.scalar() or 0
+
+    # Check membership
+    is_member = True
+    if room.is_private:
+        if current_user_id:
+            if is_mod:
+                is_member = True
+            else:
+                res_mem = await db.execute(
+                    select(RoomMember).filter(
+                        RoomMember.room_id == room.id,
+                        RoomMember.user_id == current_user_id
+                    )
+                )
+                is_member = res_mem.scalars().first() is not None
+        else:
+            is_member = False
+
+    # Auto-generate invite_code for private room if missing
+    if room.is_private and not room.invite_code:
+        room.invite_code = secrets.token_urlsafe(8)
+        await db.commit()
 
     return RoomOut(
         id=room.id,
@@ -88,9 +129,12 @@ async def _build_room_out(room: Room, db: AsyncSession) -> RoomOut:
         description=room.description,
         picture=room.picture,
         creator_id=room.creator_id,
-        is_private=room.is_private,
+        is_private=bool(room.is_private),
+        invite_code=room.invite_code if (is_member or is_mod) else None,
         created_at=room.created_at,
-        moderators=moderator_list
+        moderators=moderator_list,
+        is_member=is_member,
+        pending_admissions_count=pending_count
     )
 
 
@@ -182,13 +226,16 @@ async def serve_room_image(filename: str):
 # ROOMS
 # ─────────────────────────────────────────────────────────────────
 @router.get("/rooms", response_model=List[RoomOut])
-async def list_rooms(db: AsyncSession = Depends(get_db)):
+async def list_rooms(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     res = await db.execute(select(Room).order_by(Room.created_at.asc()))
     rooms = res.scalars().all()
-    # No default rooms - rooms are fully user-created
     result = []
+    current_user_id = current_user.id if current_user else None
     for room in rooms:
-        result.append(await _build_room_out(room, db))
+        result.append(await _build_room_out(room, db, current_user_id))
     return result
 
 
@@ -206,11 +253,16 @@ async def create_room(
     if res.scalars().first():
         raise HTTPException(status_code=400, detail="Room with this name already exists")
 
+    is_priv = bool(payload.is_private)
+    invite_code = secrets.token_urlsafe(8) if is_priv else None
+
     room = Room(
         slug=slug,
-        title=payload.title,
-        description=payload.description,
-        creator_id=current_user.id
+        title=payload.title.strip(),
+        description=payload.description.strip() if payload.description else None,
+        creator_id=current_user.id,
+        is_private=is_priv,
+        invite_code=invite_code
     )
     db.add(room)
     await db.flush()  # flush to get room.id
@@ -222,18 +274,32 @@ async def create_room(
         is_prime=True
     )
     db.add(prime_mod)
+
+    # Auto-add creator as room member
+    room_mem = RoomMember(
+        room_id=room.id,
+        user_id=current_user.id,
+        added_by=current_user.id
+    )
+    db.add(room_mem)
+
     await db.commit()
     await db.refresh(room)
 
-    return await _build_room_out(room, db)
+    return await _build_room_out(room, db, current_user.id)
 
 
 @router.get("/rooms/{slug}", response_model=RoomOut)
-async def get_room(slug: str, db: AsyncSession = Depends(get_db)):
+async def get_room(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     room = await _get_room_with_moderators(db, slug)
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    return await _build_room_out(room, db)
+    current_user_id = current_user.id if current_user else None
+    return await _build_room_out(room, db, current_user_id)
 
 
 @router.put("/rooms/{slug}", response_model=RoomOut)
@@ -243,7 +309,7 @@ async def update_room(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Moderators can update room title, description, and picture."""
+    """Moderators can update room title, description, picture, and public/private visibility."""
     room = await _get_room_with_moderators(db, slug)
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
@@ -257,10 +323,14 @@ async def update_room(
         room.description = payload.description.strip()
     if payload.picture is not None:
         room.picture = payload.picture
+    if payload.is_private is not None:
+        room.is_private = bool(payload.is_private)
+        if room.is_private and not room.invite_code:
+            room.invite_code = secrets.token_urlsafe(8)
 
     await db.commit()
     await db.refresh(room)
-    return await _build_room_out(room, db)
+    return await _build_room_out(room, db, current_user.id)
 
 
 @router.delete("/rooms/{slug}")
@@ -442,8 +512,24 @@ async def remove_room_member(
         raise HTTPException(status_code=404, detail="Room not found")
 
     if not await _is_moderator(db, room.id, current_user.id):
-        raise HTTPException(status_code=403, detail="Only moderators can remove members from this room")
+        raise HTTPException(status_code=403, detail="Only moderators can remove participants from this room")
 
+    if payload.user_id == room.creator_id:
+        raise HTTPException(status_code=400, detail="Cannot remove the room creator")
+
+    # Check if target is prime moderator
+    res_mod = await db.execute(
+        select(RoomModerator).filter(RoomModerator.room_id == room.id, RoomModerator.user_id == payload.user_id)
+    )
+    target_mod = res_mod.scalars().first()
+    if target_mod and target_mod.is_prime:
+        raise HTTPException(status_code=400, detail="Cannot remove the prime moderator")
+
+    res_target = await db.execute(select(User).filter(User.id == payload.user_id))
+    target_user = res_target.scalars().first()
+    target_name = target_user.name if target_user else "User"
+
+    # Delete RoomMember if exists
     res_member = await db.execute(
         select(RoomMember).filter(
             RoomMember.room_id == room.id,
@@ -451,29 +537,136 @@ async def remove_room_member(
         )
     )
     member_entry = res_member.scalars().first()
-    if not member_entry:
-        raise HTTPException(status_code=404, detail="User is not a member of this room")
+    if member_entry:
+        await db.delete(member_entry)
 
-    await db.delete(member_entry)
+    # Delete non-prime moderator if exists
+    if target_mod and not target_mod.is_prime:
+        await db.delete(target_mod)
+
+    # Delete or revoke RoomAdmission
+    res_adm = await db.execute(
+        select(RoomAdmission).filter(
+            RoomAdmission.room_id == room.id,
+            RoomAdmission.user_id == payload.user_id
+        )
+    )
+    adm = res_adm.scalars().first()
+    if adm:
+        await db.delete(adm)
+
     await db.commit()
-    return {"status": "removed", "message": "Member has been removed from the room"}
+
+    # Notify room participants via WebSocket
+    await hub.broadcast_to_room(slug, {
+        "type": "room_member_removed",
+        "room_slug": slug,
+        "user_id": payload.user_id,
+        "notice": f"{target_name} was removed from the room by {current_user.name}."
+    })
+
+    return {"status": "removed", "message": f"{target_name} has been removed from the room"}
+
+
+@router.post("/rooms/{slug}/exit")
+async def exit_room(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Allows any participant/moderator to exit the room (except the creator)."""
+    room = await _get_room_with_moderators(db, slug)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    if current_user.id == room.creator_id:
+        raise HTTPException(status_code=400, detail="Room creator cannot exit their own room. You can delete the room in Room Settings.")
+
+    # Remove RoomMember
+    res_member = await db.execute(
+        select(RoomMember).filter(
+            RoomMember.room_id == room.id,
+            RoomMember.user_id == current_user.id
+        )
+    )
+    member_entry = res_member.scalars().first()
+    if member_entry:
+        await db.delete(member_entry)
+
+    # Remove non-prime RoomModerator if any
+    res_mod = await db.execute(
+        select(RoomModerator).filter(
+            RoomModerator.room_id == room.id,
+            RoomModerator.user_id == current_user.id
+        )
+    )
+    mod_entry = res_mod.scalars().first()
+    if mod_entry and not mod_entry.is_prime:
+        await db.delete(mod_entry)
+
+    # Remove RoomAdmission if any
+    res_adm = await db.execute(
+        select(RoomAdmission).filter(
+            RoomAdmission.room_id == room.id,
+            RoomAdmission.user_id == current_user.id
+        )
+    )
+    adm = res_adm.scalars().first()
+    if adm:
+        await db.delete(adm)
+
+    await db.commit()
+
+    # Broadcast notice to room
+    await hub.broadcast_to_room(slug, {
+        "type": "room_member_left",
+        "room_slug": slug,
+        "user_id": current_user.id,
+        "notice": f"{current_user.name} has left the room."
+    })
+
+    return {"status": "exited", "message": f"You have exited #{room.title}"}
+
+
+@router.delete("/rooms/{slug}/messages")
+async def clear_room_messages(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Moderators can clear all messages in a room."""
+    room = await _get_room_with_moderators(db, slug)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    if not await _is_moderator(db, room.id, current_user.id):
+        raise HTTPException(status_code=403, detail="Only moderators can clear room chat")
+
+    await db.execute(
+        delete(Message).filter(Message.room_id == room.id)
+    )
+    await db.commit()
+
+    # Broadcast cleared notice
+    await hub.broadcast_to_room(slug, {
+        "type": "room_messages_cleared",
+        "room_slug": slug,
+        "notice": f"Chat history was cleared by moderator {current_user.name}."
+    })
+
+    return {"status": "cleared", "message": f"Chat history for #{room.title} cleared"}
 
 
 @router.get("/rooms/{slug}/participants", response_model=List[UserOut])
 async def get_room_participants(slug: str, db: AsyncSession = Depends(get_db)):
-    """Returns participants for a room (users who sent messages, are room members, or creator)."""
+    """Returns active participants for a room (room members, moderators, creator)."""
     room = await _get_room_with_moderators(db, slug)
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
     participant_ids = set()
-    msg_users_res = await db.execute(
-        select(Message.sender_id).filter(Message.room_id == room.id).distinct()
-    )
-    for row in msg_users_res.all():
-        if row[0]:
-            participant_ids.add(row[0])
 
+    # 1. Explicit members
     members_res = await db.execute(
         select(RoomMember.user_id).filter(RoomMember.room_id == room.id)
     )
@@ -481,8 +674,25 @@ async def get_room_participants(slug: str, db: AsyncSession = Depends(get_db)):
         if row[0]:
             participant_ids.add(row[0])
 
+    # 2. Moderators & Creator
+    mods_res = await db.execute(
+        select(RoomModerator.user_id).filter(RoomModerator.room_id == room.id)
+    )
+    for row in mods_res.all():
+        if row[0]:
+            participant_ids.add(row[0])
+
     if room.creator_id:
         participant_ids.add(room.creator_id)
+
+    # 3. Fallback only if no explicit members exist yet
+    if not participant_ids:
+        msg_users_res = await db.execute(
+            select(Message.sender_id).filter(Message.room_id == room.id).distinct()
+        )
+        for row in msg_users_res.all():
+            if row[0]:
+                participant_ids.add(row[0])
 
     if not participant_ids:
         return []
@@ -491,6 +701,211 @@ async def get_room_participants(slug: str, db: AsyncSession = Depends(get_db)):
         select(User).filter(User.id.in_(participant_ids)).order_by(User.name.asc())
     )
     return users_res.scalars().all()
+
+
+# ─────────────────────────────────────────────────────────────────
+# ROOM INVITATIONS & ADMISSIONS
+# ─────────────────────────────────────────────────────────────────
+@router.get("/rooms/{slug}/invite")
+async def get_room_invite(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Anyone in the room (or moderator) can get the invitation link."""
+    room = await _get_room_with_moderators(db, slug)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    is_mod = await _is_moderator(db, room.id, current_user.id)
+    res_m = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == current_user.id))
+    is_member = res_m.scalars().first() is not None
+
+    if room.is_private and not (is_mod or is_member):
+        raise HTTPException(status_code=403, detail="Only room members can access the invitation link")
+
+    if not room.invite_code:
+        room.invite_code = secrets.token_urlsafe(8)
+        await db.commit()
+
+    return {
+        "invite_code": room.invite_code,
+        "invite_url": f"/invite/{room.slug}?code={room.invite_code}",
+        "room_slug": room.slug,
+        "room_title": room.title,
+        "is_private": bool(room.is_private)
+    }
+
+
+@router.post("/rooms/{slug}/join")
+async def join_room(
+    slug: str,
+    payload: JoinRoomPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Join a room or request admission if private.
+    If public: adds user directly as member.
+    If private: verifies invite_code and creates an admission request for moderators.
+    """
+    room = await _get_room_with_moderators(db, slug)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    is_mod = await _is_moderator(db, room.id, current_user.id)
+    res_mem = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == current_user.id))
+    existing_member = res_mem.scalars().first()
+
+    if is_mod or existing_member:
+        return {"status": "joined", "message": "You are already a member of this room."}
+
+    if not room.is_private:
+        new_mem = RoomMember(room_id=room.id, user_id=current_user.id, added_by=current_user.id)
+        db.add(new_mem)
+        await db.commit()
+        return {"status": "joined", "message": f"Successfully joined #{room.title}"}
+
+    # Private room: verify invite code
+    if not payload.code or payload.code != room.invite_code:
+        raise HTTPException(status_code=403, detail="Invalid or missing invitation link for this private room")
+
+    # Check existing admission
+    res_adm = await db.execute(select(RoomAdmission).filter(RoomAdmission.room_id == room.id, RoomAdmission.user_id == current_user.id))
+    existing_adm = res_adm.scalars().first()
+
+    if existing_adm:
+        if existing_adm.status == "accepted":
+            new_mem = RoomMember(room_id=room.id, user_id=current_user.id, added_by=existing_adm.reviewed_by)
+            db.add(new_mem)
+            await db.commit()
+            return {"status": "joined", "message": "Your admission was accepted. You are now a member!"}
+        elif existing_adm.status == "pending":
+            return {"status": "pending", "message": "Your admission request is awaiting moderator approval."}
+        else: # rejected -> allow re-requesting
+            existing_adm.status = "pending"
+            existing_adm.created_at = datetime.utcnow()
+            await db.commit()
+    else:
+        new_adm = RoomAdmission(
+            room_id=room.id,
+            user_id=current_user.id,
+            status="pending"
+        )
+        db.add(new_adm)
+        await db.commit()
+
+    # Notify moderators in real-time
+    res_mods = await db.execute(select(RoomModerator).filter(RoomModerator.room_id == room.id))
+    for mod in res_mods.scalars().all():
+        await hub.send_to_user(mod.user_id, {
+            "type": "room_admission_received",
+            "room_slug": room.slug,
+            "room_title": room.title,
+            "user_id": current_user.id,
+            "name": current_user.name
+        })
+
+    return {
+        "status": "pending",
+        "message": f"Admission requested for #{room.title}. A moderator will review your request."
+    }
+
+
+@router.get("/rooms/{slug}/admissions", response_model=List[RoomAdmissionOut])
+async def list_room_admissions(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Moderators can view pending admission requests for the private room."""
+    room = await _get_room_with_moderators(db, slug)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    if not await _is_moderator(db, room.id, current_user.id):
+        raise HTTPException(status_code=403, detail="Only moderators can view room admissions")
+
+    res = await db.execute(
+        select(RoomAdmission).filter(
+            RoomAdmission.room_id == room.id,
+            RoomAdmission.status == "pending"
+        ).order_by(RoomAdmission.created_at.desc())
+    )
+    admissions = res.scalars().all()
+    result = []
+    for adm in admissions:
+        res_u = await db.execute(select(User).filter(User.id == adm.user_id))
+        u = res_u.scalars().first()
+        if u:
+            result.append(RoomAdmissionOut(
+                id=adm.id,
+                room_id=room.id,
+                room_slug=room.slug,
+                room_title=room.title,
+                user_id=u.id,
+                user_name=u.name,
+                user_username=u.username,
+                user_avatar=u.avatar,
+                user_gender=u.gender,
+                name=u.name,
+                username=u.username,
+                avatar=u.avatar,
+                gender=u.gender,
+                status=adm.status,
+                created_at=adm.created_at
+            ))
+    return result
+
+
+@router.post("/rooms/{slug}/admissions/{admission_id}/respond")
+async def respond_to_admission(
+    slug: str,
+    admission_id: str,
+    payload: RespondAdmissionPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Moderators accept or reject incoming persons into the room."""
+    room = await _get_room_with_moderators(db, slug)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    if not await _is_moderator(db, room.id, current_user.id):
+        raise HTTPException(status_code=403, detail="Only moderators can respond to admissions")
+
+    res = await db.execute(select(RoomAdmission).filter(RoomAdmission.id == admission_id, RoomAdmission.room_id == room.id))
+    admission = res.scalars().first()
+    if not admission:
+        raise HTTPException(status_code=404, detail="Admission request not found")
+
+    status_choice = payload.status.lower()
+    if status_choice not in ["accepted", "rejected"]:
+        raise HTTPException(status_code=400, detail="Invalid status, must be 'accepted' or 'rejected'")
+
+    admission.status = status_choice
+    admission.reviewed_at = datetime.utcnow()
+    admission.reviewed_by = current_user.id
+
+    if status_choice == "accepted":
+        res_m = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == admission.user_id))
+        if not res_m.scalars().first():
+            db.add(RoomMember(room_id=room.id, user_id=admission.user_id, added_by=current_user.id))
+
+    await db.commit()
+
+    # Notify applicant via WebSocket
+    await hub.send_to_user(admission.user_id, {
+        "type": "room_admission_status",
+        "room_slug": room.slug,
+        "room_title": room.title,
+        "status": status_choice
+    })
+
+    return {
+        "status": status_choice,
+        "message": f"Admission request has been {status_choice}."
+    }
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -775,6 +1190,15 @@ async def send_friend_request(
     )
     db.add(new_f)
     await db.commit()
+
+    # Real-time WebSocket notify addressee
+    await hub.send_to_user(payload.addressee_id, {
+        "type": "friend_request_received",
+        "requester_id": current_user.id,
+        "name": current_user.name,
+        "username": current_user.username
+    })
+
     return {"status": "pending_sent", "message": "Friend request sent"}
 
 
@@ -799,6 +1223,12 @@ async def respond_to_friend_request(
     if status_req == "accepted":
         friendship.status = "accepted"
         await db.commit()
+        # Real-time WebSocket notify requester
+        await hub.send_to_user(friendship.requester_id, {
+            "type": "friend_request_accepted",
+            "friend_id": current_user.id,
+            "name": current_user.name
+        })
         return {"status": "accepted", "message": "Friend request accepted"}
     elif status_req in ["declined", "ignored"]:
         await db.delete(friendship)
@@ -809,14 +1239,110 @@ async def respond_to_friend_request(
 
 
 # ─────────────────────────────────────────────────────────────────
+# NOTIFICATIONS (Action-required items)
+# ─────────────────────────────────────────────────────────────────
+@router.get("/notifications", response_model=NotificationListOut)
+async def get_notifications(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returns action-required notifications:
+    - Incoming pending friend requests
+    - Incoming pending room admission requests for rooms moderated by current user
+    """
+    items = []
+
+    # 1. Pending Friend Requests
+    res_f = await db.execute(
+        select(Friendship).filter(
+            Friendship.addressee_id == current_user.id,
+            Friendship.status == "pending"
+        ).order_by(Friendship.created_at.desc())
+    )
+    for f in res_f.scalars().all():
+        res_u = await db.execute(select(User).filter(User.id == f.requester_id))
+        u = res_u.scalars().first()
+        if u:
+            items.append(NotificationItem(
+                id=f"friend_{f.id}",
+                raw_id=f.id,
+                type="friend_request",
+                title="Friend Request",
+                description=f"@{u.username} sent you a friend request",
+                avatar=u.avatar,
+                user_id=u.id,
+                user_name=u.name,
+                user_username=u.username,
+                created_at=f.created_at
+            ))
+
+    # 2. Pending Room Admissions for Moderated Rooms
+    res_mods = await db.execute(
+        select(RoomModerator).filter(RoomModerator.user_id == current_user.id)
+    )
+    mod_room_ids = [m.room_id for m in res_mods.scalars().all()]
+    if mod_room_ids:
+        res_adms = await db.execute(
+            select(RoomAdmission).filter(
+                RoomAdmission.room_id.in_(mod_room_ids),
+                RoomAdmission.status == "pending"
+            ).order_by(RoomAdmission.created_at.desc())
+        )
+        for adm in res_adms.scalars().all():
+            res_r = await db.execute(select(Room).filter(Room.id == adm.room_id))
+            room = res_r.scalars().first()
+            res_u = await db.execute(select(User).filter(User.id == adm.user_id))
+            u = res_u.scalars().first()
+            if room and u:
+                items.append(NotificationItem(
+                    id=f"admission_{adm.id}",
+                    raw_id=adm.id,
+                    type="room_admission",
+                    title="Room Admission Request",
+                    description=f"{u.name} requested to join #{room.title}",
+                    avatar=u.avatar,
+                    user_id=u.id,
+                    user_name=u.name,
+                    user_username=u.username,
+                    room_slug=room.slug,
+                    room_title=room.title,
+                    created_at=adm.created_at
+                ))
+
+    # Sort items by date descending
+    items.sort(key=lambda x: x.created_at, reverse=True)
+
+    return NotificationListOut(
+        items=items,
+        unread_count=len(items)
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
 # MESSAGE HISTORIES
 # ─────────────────────────────────────────────────────────────────
 @router.get("/rooms/{slug}/messages", response_model=List[MessageOut])
-async def get_room_messages(slug: str, limit: int = 50, db: AsyncSession = Depends(get_db)):
+async def get_room_messages(
+    slug: str,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     res_r = await db.execute(select(Room).filter(Room.slug == slug.lower()))
     room = res_r.scalars().first()
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
+
+    if room.is_private:
+        if not current_user:
+            raise HTTPException(status_code=403, detail="This room is private. Please join to view messages.")
+        is_creator = (room.creator_id == current_user.id)
+        is_mod = await _is_moderator(db, room.id, current_user.id)
+        if not (is_creator or is_mod):
+            res_m = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == current_user.id))
+            if not res_m.scalars().first():
+                raise HTTPException(status_code=403, detail="This room is private. You must be an admitted member to view messages.")
 
     res = await db.execute(
         select(Message, User)
@@ -881,3 +1407,60 @@ async def get_direct_messages(
             created_at=msg.created_at
         ))
     return messages
+
+
+@router.delete("/direct/{recipient_id}/messages")
+async def clear_direct_messages(
+    recipient_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Clears all direct messages between current user and recipient."""
+    await db.execute(
+        delete(Message).filter(
+            Message.room_id.is_(None),
+            or_(
+                and_(Message.sender_id == current_user.id, Message.recipient_id == recipient_id),
+                and_(Message.sender_id == recipient_id, Message.recipient_id == current_user.id)
+            )
+        )
+    )
+    await db.commit()
+    return {"status": "cleared", "message": "Direct chat cleared successfully"}
+
+
+@router.delete("/friends/{target_user_id}")
+@router.post("/friends/{target_user_id}/remove")
+async def remove_friend(
+    target_user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Removes a friendship between current user and target user."""
+    res_f = await db.execute(
+        select(Friendship).filter(
+            or_(
+                and_(Friendship.requester_id == current_user.id, Friendship.addressee_id == target_user_id),
+                and_(Friendship.requester_id == target_user_id, Friendship.addressee_id == current_user.id)
+            )
+        )
+    )
+    friendship = res_f.scalars().first()
+    if not friendship:
+        raise HTTPException(status_code=404, detail="Friendship not found")
+
+    await db.delete(friendship)
+    await db.commit()
+
+    # Real-time WebSocket notify both users
+    await hub.send_to_user(target_user_id, {
+        "type": "friend_removed",
+        "user_id": current_user.id
+    })
+    await hub.send_to_user(current_user.id, {
+        "type": "friend_removed",
+        "user_id": target_user_id
+    })
+
+    return {"status": "removed", "message": "Friend removed successfully"}
+

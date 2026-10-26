@@ -27,5 +27,16 @@ async def get_db():
             await session.close()
 
 async def init_db():
+    import app.models.entities  # Ensures all models are registered on Base.metadata
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        def add_missing_columns(connection):
+            try:
+                cursor = connection.cursor()
+                cursor.execute("PRAGMA table_info(rooms)")
+                cols = [col[1] for col in cursor.fetchall()]
+                if cols and "invite_code" not in cols:
+                    cursor.execute("ALTER TABLE rooms ADD COLUMN invite_code VARCHAR(50)")
+            except Exception:
+                pass
+        await conn.run_sync(add_missing_columns)

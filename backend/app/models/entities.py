@@ -51,6 +51,7 @@ class Room(Base):
     picture = Column(String(500), nullable=True)  # Room avatar/banner URL, set by moderators
     creator_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     is_private = Column(Boolean, default=False)
+    invite_code = Column(String(50), nullable=True, unique=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     messages = relationship("Message", back_populates="room", cascade="all, delete-orphan")
@@ -95,6 +96,30 @@ class RoomMember(Base):
 
     __table_args__ = (
         UniqueConstraint("room_id", "user_id", name="uq_room_member"),
+    )
+
+
+class RoomAdmission(Base):
+    """
+    Admission requests for private rooms. When someone opens a private room invite link,
+    they request admission. Room moderators can accept or reject.
+    """
+    __tablename__ = "room_admissions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    room_id = Column(String(36), ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String(20), default="pending")  # pending, accepted, rejected
+    created_at = Column(DateTime, default=datetime.utcnow)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    room = relationship("Room")
+    user = relationship("User", foreign_keys=[user_id])
+    reviewer = relationship("User", foreign_keys=[reviewed_by])
+
+    __table_args__ = (
+        UniqueConstraint("room_id", "user_id", name="uq_room_admission"),
     )
 
 

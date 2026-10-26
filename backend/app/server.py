@@ -114,11 +114,6 @@ async def websocket_gateway(
                         hub.leave_room(websocket, current_room_slug)
                     current_room_slug = slug
                     hub.join_room(websocket, slug)
-                    await hub.broadcast_to_room(slug, {
-                        "type": "room_notice",
-                        "room_slug": slug,
-                        "notice": f"{user_info['name']} joined #{slug}"
-                    }, exclude_ws=websocket)
 
             elif action == "leave_room":
                 if current_room_slug:
@@ -130,14 +125,32 @@ async def websocket_gateway(
                 content = (payload.get("content") or "").strip()
                 if room_slug and content and len(content) <= 5000:
                     slug = room_slug.lower()
-                    
-                    # Persist message to DB
-                    msg_id = None
-                    created_at_iso = datetime.datetime.utcnow().isoformat()
-                    async with AsyncSessionLocal() as db:
-                        res = await db.execute(select(Room).filter(Room.slug == slug))
-                        room = res.scalars().first()
-                        if room:
+                    try:
+                        # Persist message to DB
+                        msg_id = None
+                        created_at_iso = datetime.datetime.utcnow().isoformat()
+                        async with AsyncSessionLocal() as db:
+                            res = await db.execute(select(Room).filter(Room.slug == slug))
+                            room = res.scalars().first()
+                            if not room:
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": f"Room #{slug} not found."
+                                })
+                                continue
+
+                            if room.is_private:
+                                from app.models.entities import RoomModerator, RoomMember
+                                is_creator = (room.creator_id == user_info["id"])
+                                res_mod = await db.execute(select(RoomModerator).filter(RoomModerator.room_id == room.id, RoomModerator.user_id == user_info["id"]))
+                                res_mem = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == user_info["id"]))
+                                if not (is_creator or res_mod.scalars().first() or res_mem.scalars().first()):
+                                    await websocket.send_json({
+                                        "type": "error",
+                                        "message": "This room is private. You must be an admitted member to send messages."
+                                    })
+                                    continue
+
                             db_msg = Message(
                                 sender_id=user_info["id"],
                                 room_id=room.id,
@@ -148,20 +161,27 @@ async def websocket_gateway(
                             await db.refresh(db_msg)
                             msg_id = db_msg.id
 
-                    # Broadcast to everyone in the room
-                    msg_data = {
-                        "type": "room_message",
-                        "id": msg_id,
-                        "room_slug": slug,
-                        "content": content,
-                        "sender_id": user_info["id"],
-                        "sender_name": user_info["name"],
-                        "sender_username": user_info["username"],
-                        "sender_gender": user_info.get("gender", "Prefer not to say"),
-                        "sender_avatar": user_info["avatar"],
-                        "created_at": created_at_iso
-                    }
-                    await hub.broadcast_global(msg_data)
+                        # Broadcast to everyone in the room
+                        msg_data = {
+                            "type": "room_message",
+                            "id": msg_id,
+                            "room_slug": slug,
+                            "content": content,
+                            "sender_id": user_info["id"],
+                            "sender_name": user_info["name"],
+                            "sender_username": user_info["username"],
+                            "sender_gender": user_info.get("gender", "Prefer not to say"),
+                            "sender_avatar": user_info["avatar"],
+                            "created_at": created_at_iso
+                        }
+                        await hub.broadcast_global(msg_data)
+                    except Exception as e:
+                        import logging
+                        logging.getLogger("uvicorn.error").exception(f"Error sending room message in #{slug}: {e}")
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": f"Failed to send message: {str(e)}"
+                        })
 
             elif action == "send_direct_message":
                 recipient_id = payload.get("recipient_id")

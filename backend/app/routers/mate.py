@@ -12,7 +12,7 @@ from app.models.entities import (
 )
 from app.schemas.schemas import (
     MateQueueJoinRequest, MateQueueStatusResponse,
-    MateConversationDetail, MateMessageOut, UserOut
+    MateConversationDetail, MateMessageOut, UserOut, MateTrendOut
 )
 from app.services.matchmaking import (
     find_or_enqueue_match, clean_expired_queue_entries,
@@ -349,3 +349,67 @@ async def exit_conversation(
         })
 
     return {"status": "left", "message": "You have left the conversation"}
+
+
+@router.get("/trends", response_model=List[MateTrendOut])
+async def get_mate_trends(
+    order: str = "asc",
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns suggested #hot trends (frequently used/trending interests)
+    to boost matching probability.
+    Sorted in ascending order based on popularity as requested.
+    """
+    import json
+    from collections import Counter
+
+    # Baseline seed counts to ensure a vibrant set of trending topics
+    counts = Counter({
+        "coding": 38,
+        "gaming": 35,
+        "anime": 31,
+        "music": 29,
+        "ai": 26,
+        "movies": 24,
+        "tech": 22,
+        "startups": 19,
+        "design": 18,
+        "fitness": 16,
+        "travel": 15,
+        "books": 14,
+        "art": 12,
+        "photography": 11,
+        "crypto": 9,
+        "chess": 7
+    })
+
+    # Count real interests from registered users
+    res_users = await db.execute(select(User.interests).filter(User.interests.isnot(None)))
+    for (raw_interests,) in res_users.all():
+        if raw_interests:
+            for item in raw_interests.split(","):
+                clean = item.strip().lower()
+                if clean:
+                    counts[clean] += 3
+
+    # Count from active mate queue
+    res_queue = await db.execute(select(MateQueue.interests_json))
+    for (q_json,) in res_queue.all():
+        if q_json:
+            try:
+                for item in json.loads(q_json):
+                    clean = str(item).strip().lower()
+                    if clean:
+                        counts[clean] += 2
+            except Exception:
+                pass
+
+    # Sort in ascending order of popularity as requested
+    reverse = (order.lower() == "desc")
+    sorted_items = sorted(counts.items(), key=lambda x: (x[1], x[0]), reverse=reverse)
+
+    result = []
+    for rank, (topic, count) in enumerate(sorted_items[:30], 1):
+        result.append(MateTrendOut(topic=topic, count=count, rank=rank))
+    return result

@@ -48,6 +48,22 @@ async def get_user_from_token_string(token: str, db: AsyncSession) -> User | Non
     result = await db.execute(select(User).filter(User.id == user_id))
     return result.scalars().first()
 
+async def get_current_user_optional(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+) -> User | None:
+    """Optional user dependency that returns None instead of raising 401 when unauthenticated."""
+    if not token:
+        return None
+    payload = decode_access_token(token)
+    if not payload:
+        return None
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    result = await db.execute(select(User).filter(User.id == user_id))
+    return result.scalars().first()
+
 async def get_authenticated_user(
     current_user: User = Depends(get_current_user)
 ) -> User:

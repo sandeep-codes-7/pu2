@@ -113,11 +113,13 @@ class RoomCreate(BaseModel):
     slug: str = Field(..., min_length=1, max_length=50)
     title: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
+    is_private: Optional[bool] = False
 
 class RoomUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     picture: Optional[str] = None   # URL after image upload
+    is_private: Optional[bool] = None
 
 class RoomOut(BaseModel):
     id: str
@@ -127,12 +129,59 @@ class RoomOut(BaseModel):
     picture: Optional[str] = None
     creator_id: Optional[str] = None
     is_private: bool = False
+    invite_code: Optional[str] = None
     online_count: int = 0
     created_at: datetime
     moderators: List[ModeratorOut] = []
+    is_member: Optional[bool] = True
+    pending_admissions_count: Optional[int] = 0
 
     class Config:
         from_attributes = True
+
+class RoomAdmissionOut(BaseModel):
+    id: str
+    room_id: str
+    room_slug: str
+    room_title: str
+    user_id: str
+    user_name: str
+    user_username: str
+    user_avatar: Optional[str] = None
+    user_gender: Optional[str] = None
+    name: Optional[str] = None
+    username: Optional[str] = None
+    avatar: Optional[str] = None
+    gender: Optional[str] = None
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class RespondAdmissionPayload(BaseModel):
+    status: str  # "accepted" or "rejected"
+
+class JoinRoomPayload(BaseModel):
+    code: Optional[str] = None
+
+class NotificationItem(BaseModel):
+    id: str
+    type: str  # "friend_request" | "room_admission"
+    title: str
+    description: str
+    avatar: Optional[str] = None
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    user_username: Optional[str] = None
+    room_slug: Optional[str] = None
+    room_title: Optional[str] = None
+    created_at: datetime
+    raw_id: str
+
+class NotificationListOut(BaseModel):
+    items: List[NotificationItem] = []
+    unread_count: int = 0
 
 # Message Schemas
 class MessageCreate(BaseModel):
@@ -199,4 +248,10 @@ class MateMessageOut(BaseModel):
     is_you: bool
     content: str
     created_at: datetime
+
+
+class MateTrendOut(BaseModel):
+    topic: str
+    count: int
+    rank: Optional[int] = None
 
