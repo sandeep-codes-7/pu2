@@ -131,7 +131,7 @@ class RoomOut(BaseModel):
     is_private: bool = False
     invite_code: Optional[str] = None
     online_count: int = 0
-    created_at: datetime
+    created_at: Optional[datetime] = None
     moderators: List[ModeratorOut] = []
     is_member: Optional[bool] = True
     pending_admissions_count: Optional[int] = 0

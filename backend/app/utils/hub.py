@@ -23,6 +23,10 @@ class HubConnectionManager:
     def get_room_online_count(self, room_slug: str) -> int:
         return len(self.room_sockets.get(room_slug.lower(), set()))
 
+    def get_room_user_ids(self, room_slug: str) -> Set[str]:
+        sockets = self.room_sockets.get(room_slug.lower(), set())
+        return {self.socket_users[ws]["id"] for ws in sockets if ws in self.socket_users and "id" in self.socket_users[ws]}
+
     async def register(self, websocket: WebSocket, user_info: Dict[str, Any]):
         await websocket.accept()
         user_id = user_info["id"]

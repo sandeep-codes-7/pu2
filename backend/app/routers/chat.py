@@ -41,12 +41,13 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 def _moderator_out(mod: RoomModerator) -> ModeratorOut:
+    user = getattr(mod, "user", None)
     return ModeratorOut(
         user_id=mod.user_id,
-        username=mod.user.username if mod.user else "",
-        name=mod.user.name if mod.user else "",
-        avatar=mod.user.avatar if mod.user else None,
-        is_prime=mod.is_prime
+        username=user.username if user else "",
+        name=user.name if user else "",
+        avatar=user.avatar if user else None,
+        is_prime=bool(getattr(mod, "is_prime", False))
     )
 
 
@@ -56,82 +57,104 @@ async def _get_room_with_moderators(db: AsyncSession, slug: str) -> Optional[Roo
 
 
 async def _is_moderator(db: AsyncSession, room_id: str, user_id: str) -> bool:
-    res = await db.execute(
-        select(RoomModerator).filter(
-            RoomModerator.room_id == room_id,
-            RoomModerator.user_id == user_id
+    try:
+        res = await db.execute(
+            select(RoomModerator).filter(
+                RoomModerator.room_id == room_id,
+                RoomModerator.user_id == user_id
+            )
         )
-    )
-    return res.scalars().first() is not None
+        return res.scalars().first() is not None
+    except Exception:
+        return False
 
 
 async def _is_prime_moderator(db: AsyncSession, room_id: str, user_id: str) -> bool:
-    res = await db.execute(
-        select(RoomModerator).filter(
-            RoomModerator.room_id == room_id,
-            RoomModerator.user_id == user_id,
-            RoomModerator.is_prime == True
+    try:
+        res = await db.execute(
+            select(RoomModerator).filter(
+                RoomModerator.room_id == room_id,
+                RoomModerator.user_id == user_id,
+                RoomModerator.is_prime == True
+            )
         )
-    )
-    return res.scalars().first() is not None
+        return res.scalars().first() is not None
+    except Exception:
+        return False
 
 
 async def _build_room_out(room: Room, db: AsyncSession, current_user_id: Optional[str] = None) -> RoomOut:
-    res_mods = await db.execute(select(RoomModerator).filter(RoomModerator.room_id == room.id))
-    mods = res_mods.scalars().all()
     moderator_list = []
     is_mod = False
-    for m in mods:
-        # Eager load user
-        res_u = await db.execute(select(User).filter(User.id == m.user_id))
-        m.user = res_u.scalars().first()
-        moderator_list.append(_moderator_out(m))
-        if current_user_id and m.user_id == current_user_id:
-            is_mod = True
+    try:
+        res_mods = await db.execute(select(RoomModerator).filter(RoomModerator.room_id == room.id))
+        mods = res_mods.scalars().all()
+        for m in mods:
+            # Eager load user
+            res_u = await db.execute(select(User).filter(User.id == m.user_id))
+            m.user = res_u.scalars().first()
+            moderator_list.append(_moderator_out(m))
+            if current_user_id and m.user_id == current_user_id:
+                is_mod = True
+    except Exception as e:
+        print(f"[WARN] Failed to load moderators for room {getattr(room, 'slug', '')}: {e}")
 
     # Count pending admissions for moderators
     pending_count = 0
-    if is_mod and room.is_private:
-        res_adm = await db.execute(
-            select(func.count(RoomAdmission.id)).filter(
-                RoomAdmission.room_id == room.id,
-                RoomAdmission.status == "pending"
+    is_private_room = bool(getattr(room, "is_private", False))
+    if is_mod and is_private_room:
+        try:
+            res_adm = await db.execute(
+                select(func.count(RoomAdmission.id)).filter(
+                    RoomAdmission.room_id == room.id,
+                    RoomAdmission.status == "pending"
+                )
             )
-        )
-        pending_count = res_adm.scalar() or 0
+            pending_count = res_adm.scalar() or 0
+        except Exception:
+            pending_count = 0
 
     # Check membership
     is_member = True
-    if room.is_private:
+    if is_private_room:
         if current_user_id:
             if is_mod:
                 is_member = True
             else:
-                res_mem = await db.execute(
-                    select(RoomMember).filter(
-                        RoomMember.room_id == room.id,
-                        RoomMember.user_id == current_user_id
+                try:
+                    res_mem = await db.execute(
+                        select(RoomMember).filter(
+                            RoomMember.room_id == room.id,
+                            RoomMember.user_id == current_user_id
+                        )
                     )
-                )
-                is_member = res_mem.scalars().first() is not None
+                    is_member = res_mem.scalars().first() is not None
+                except Exception:
+                    is_member = False
         else:
             is_member = False
 
     # Auto-generate invite_code for private room if missing
-    if room.is_private and not room.invite_code:
-        room.invite_code = secrets.token_urlsafe(8)
-        await db.commit()
+    invite_code = getattr(room, "invite_code", None)
+    if is_private_room and not invite_code:
+        try:
+            room.invite_code = secrets.token_urlsafe(8)
+            await db.commit()
+            invite_code = room.invite_code
+        except Exception:
+            pass
 
     return RoomOut(
-        id=room.id,
+        id=str(room.id),
         slug=room.slug,
         title=room.title,
-        description=room.description,
-        picture=room.picture,
-        creator_id=room.creator_id,
-        is_private=bool(room.is_private),
-        invite_code=room.invite_code if (is_member or is_mod) else None,
-        created_at=room.created_at,
+        description=getattr(room, "description", None),
+        picture=getattr(room, "picture", None),
+        creator_id=getattr(room, "creator_id", None),
+        is_private=is_private_room,
+        invite_code=invite_code if (is_member or is_mod) else None,
+        online_count=len(hub.get_room_user_ids(room.slug)),
+        created_at=getattr(room, "created_at", None) or datetime.utcnow(),
         moderators=moderator_list,
         is_member=is_member,
         pending_admissions_count=pending_count
@@ -230,12 +253,21 @@ async def list_rooms(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
-    res = await db.execute(select(Room).order_by(Room.created_at.asc()))
-    rooms = res.scalars().all()
+    try:
+        res = await db.execute(select(Room).order_by(Room.created_at.asc()))
+        rooms = res.scalars().all()
+    except Exception as e:
+        print(f"[ERROR] Failed to query rooms: {e}")
+        return []
+
     result = []
     current_user_id = current_user.id if current_user else None
     for room in rooms:
-        result.append(await _build_room_out(room, db, current_user_id))
+        try:
+            result.append(await _build_room_out(room, db, current_user_id))
+        except Exception as e:
+            print(f"[ERROR] Failed building room out for {getattr(room, 'slug', '')}: {e}")
+            continue
     return result
 
 
@@ -267,21 +299,27 @@ async def create_room(
     db.add(room)
     await db.flush()  # flush to get room.id
 
-    # Auto-add creator as prime moderator
-    prime_mod = RoomModerator(
-        room_id=room.id,
-        user_id=current_user.id,
-        is_prime=True
-    )
-    db.add(prime_mod)
+    try:
+        # Auto-add creator as prime moderator
+        prime_mod = RoomModerator(
+            room_id=room.id,
+            user_id=current_user.id,
+            is_prime=True
+        )
+        db.add(prime_mod)
+    except Exception as e:
+        print(f"[WARN] Failed to auto-add prime moderator: {e}")
 
-    # Auto-add creator as room member
-    room_mem = RoomMember(
-        room_id=room.id,
-        user_id=current_user.id,
-        added_by=current_user.id
-    )
-    db.add(room_mem)
+    try:
+        # Auto-add creator as room member
+        room_mem = RoomMember(
+            room_id=room.id,
+            user_id=current_user.id,
+            added_by=current_user.id
+        )
+        db.add(room_mem)
+    except Exception as e:
+        print(f"[WARN] Failed to auto-add room member: {e}")
 
     await db.commit()
     await db.refresh(room)
