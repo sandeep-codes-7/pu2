@@ -967,10 +967,11 @@ async def list_direct_conversations(
 ):
     """
     Returns only profiles where a chat has actually been initiated
-    (either current_user sent a message to them, or they sent a message to current_user).
+    (either current_user sent a message to them, or they sent a message to current_user),
+    ordered with the most recently active conversation on top.
     """
     res = await db.execute(
-        select(Message.sender_id, Message.recipient_id).filter(
+        select(Message.sender_id, Message.recipient_id, Message.created_at).filter(
             Message.room_id.is_(None),
             or_(
                 Message.sender_id == current_user.id,
@@ -978,18 +979,21 @@ async def list_direct_conversations(
             )
         )
     )
-    partner_ids = set()
-    for s_id, r_id in res.all():
-        if s_id and s_id != current_user.id:
-            partner_ids.add(s_id)
-        if r_id and r_id != current_user.id:
-            partner_ids.add(r_id)
+    partner_last_time = {}
+    for s_id, r_id, created_at in res.all():
+        pid = r_id if s_id == current_user.id else s_id
+        if pid and pid != current_user.id:
+            msg_time = created_at or datetime.min
+            if pid not in partner_last_time or msg_time > partner_last_time[pid]:
+                partner_last_time[pid] = msg_time
 
-    if not partner_ids:
+    if not partner_last_time:
         return []
 
-    res_users = await db.execute(select(User).filter(User.id.in_(partner_ids)))
-    return res_users.scalars().all()
+    sorted_partner_ids = sorted(partner_last_time.keys(), key=lambda p: partner_last_time[p], reverse=True)
+    res_users = await db.execute(select(User).filter(User.id.in_(sorted_partner_ids)))
+    user_map = {u.id: u for u in res_users.scalars().all()}
+    return [user_map[pid] for pid in sorted_partner_ids if pid in user_map]
 
 
 # ─────────────────────────────────────────────────────────────────

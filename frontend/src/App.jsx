@@ -8,7 +8,7 @@ import {
   Upload, Image, ChevronDown, Crown, UserMinus, User as UserIcon,
   Heart, AlertCircle, CheckCircle2, Loader2, Flame,
   PanelLeftClose, PanelLeftOpen, ArrowLeft, Info, Sun, Moon,
-  Bell, Lock, Globe, Copy, Share2, MoreVertical, Eraser
+  Bell, Lock, Globe, Copy, Share2, MoreVertical, Eraser, Construction
 } from 'lucide-react';
 
 const API_BASE = window.location.origin.includes(":5173")
@@ -110,9 +110,12 @@ export default function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, [isSidebarCollapsed]);
 
-  const [viewMode, setViewMode] = useState("chat"); // "chat" | "explore" | "mate" | "mate_chat"
+  const [viewMode, setViewMode] = useState("chat"); // "chat" | "explore" | "mate" | "mate_chat" | "announcements"
   const [activeTab, setActiveTab] = useState({ type: "room", id: null, data: null });
   const [mobileTab, setMobileTab] = useState("chat"); // "chat" | "announcements"
+  const [exploreFilter, setExploreFilter] = useState("all"); // "all" | "friends"
+  const [announcementsTab, setAnnouncementsTab] = useState("rooms"); // "rooms" | "announcements"
+  const [roomsFilterQuery, setRoomsFilterQuery] = useState("");
 
   // Data
   const [rooms, setRooms] = useState([]);
@@ -207,13 +210,38 @@ export default function App() {
   const [mateTrends, setMateTrends] = useState([]);
   const [isLoadingTrends, setIsLoadingTrends] = useState(false);
 
+  const pushNavState = useCallback((type) => {
+    try {
+      window.history.pushState({ puApp: true, type, ts: Date.now() }, "");
+    } catch (e) {}
+  }, []);
+
+  const handleSystemOrInAppBack = useCallback((fallbackFn) => {
+    if (window.history.state && window.history.state.puApp && !window.history.state.root) {
+      window.history.back();
+    } else if (fallbackFn) {
+      fallbackFn();
+    }
+  }, []);
+
+  // Initialize root history state
+  useEffect(() => {
+    if (!window.history.state || !window.history.state.puApp) {
+      window.history.replaceState({ puApp: true, root: true }, "");
+    }
+  }, []);
+
   const activeChatStateRef = useRef({
     viewMode,
     activeTab,
     viewingProfileId,
     roomSettingsOpen,
     viewingRoomInfo,
-    currentUserId: currentUser?.id
+    currentUserId: currentUser?.id,
+    isCreateRoomOpen,
+    showLandingPage,
+    isEditingProfile,
+    mobileTab
   });
 
   useEffect(() => {
@@ -223,9 +251,64 @@ export default function App() {
       viewingProfileId,
       roomSettingsOpen,
       viewingRoomInfo,
-      currentUserId: currentUser?.id
+      currentUserId: currentUser?.id,
+      isCreateRoomOpen,
+      showLandingPage,
+      isEditingProfile,
+      mobileTab
     };
-  }, [viewMode, activeTab, viewingProfileId, roomSettingsOpen, viewingRoomInfo, currentUser]);
+  }, [viewMode, activeTab, viewingProfileId, roomSettingsOpen, viewingRoomInfo, currentUser, isCreateRoomOpen, showLandingPage, isEditingProfile, mobileTab]);
+
+  // Robust System & Hardware Back Button Handler
+  useEffect(() => {
+    const onPopState = () => {
+      const state = activeChatStateRef.current;
+      if (notificationsOpenRef.current) {
+        setNotificationsOpenMode(null);
+        return;
+      }
+      if (state.isEditingProfile) {
+        setIsEditingProfile(false);
+        return;
+      }
+      if (state.viewingProfileId) {
+        setViewingProfileId(null);
+        return;
+      }
+      if (state.roomSettingsOpen) {
+        setRoomSettingsOpen(false);
+        return;
+      }
+      if (state.viewingRoomInfo) {
+        setViewingRoomInfo(null);
+        return;
+      }
+      if (state.isCreateRoomOpen) {
+        setIsCreateRoomOpen(false);
+        return;
+      }
+      if (state.showLandingPage) {
+        setShowLandingPage(false);
+        return;
+      }
+      if (state.activeTab?.id && window.innerWidth <= 768) {
+        setActiveTab({ type: "room", id: null, data: null });
+        return;
+      }
+      if (state.viewMode !== "chat") {
+        setViewMode("chat");
+        setMobileTab("chat");
+        return;
+      }
+      if (state.mobileTab !== "chat") {
+        setMobileTab("chat");
+        return;
+      }
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   // Clear unread count when viewing active room or conversation
   useEffect(() => {
@@ -569,6 +652,13 @@ export default function App() {
             return next;
           });
         } else if (data.type === "room_message") {
+          setRooms(prev => {
+            const roomSlug = data.room_slug?.toLowerCase();
+            const idx = prev.findIndex(r => r.slug.toLowerCase() === roomSlug);
+            if (idx <= 0) return prev;
+            const target = prev[idx];
+            return [target, ...prev.filter((_, i) => i !== idx)];
+          });
           const state = activeChatStateRef.current;
           const isViewingThisRoom = state.viewMode === "chat" &&
             !state.viewingProfileId &&
@@ -594,8 +684,15 @@ export default function App() {
             setMessages(prev => [...prev, { isNotice: true, text: data.notice, id: Math.random() }]);
           }
         } else if (data.type === "direct_message") {
-          callbacksRef.current.refreshDirectConversations?.();
           const state = activeChatStateRef.current;
+          const partnerId = data.sender_id === state.currentUserId ? data.recipient_id : data.sender_id;
+          setDirectConversations(prev => {
+            const idx = prev.findIndex(u => u.id === partnerId);
+            if (idx <= 0) return prev;
+            const target = prev[idx];
+            return [target, ...prev.filter((_, i) => i !== idx)];
+          });
+          callbacksRef.current.refreshDirectConversations?.();
           const isViewingThisConvo = state.viewMode === "chat" &&
             !state.viewingProfileId &&
             !state.roomSettingsOpen &&
@@ -786,6 +883,9 @@ export default function App() {
   // NAVIGATION
   // ──────────────────────────────────────────────────────────────
   const selectTab = async (type, id, dataObj) => {
+    if (window.innerWidth <= 768 && id) {
+      pushNavState("chat_active");
+    }
     setViewMode("chat");
     setViewingProfileId(null);
     setRoomSettingsOpen(false);
@@ -832,8 +932,22 @@ export default function App() {
 
     if (activeTab.type === "room") {
       wsRef.current.send(JSON.stringify({ action: "send_room_message", room_slug: activeTab.id, content }));
+      setRooms(prev => {
+        const roomSlug = activeTab.id?.toLowerCase();
+        const idx = prev.findIndex(r => r.slug.toLowerCase() === roomSlug);
+        if (idx <= 0) return prev;
+        const target = prev[idx];
+        return [target, ...prev.filter((_, i) => i !== idx)];
+      });
     } else {
       wsRef.current.send(JSON.stringify({ action: "send_direct_message", recipient_id: activeTab.id, content }));
+      setDirectConversations(prev => {
+        const partnerId = activeTab.id;
+        const idx = prev.findIndex(u => u.id === partnerId);
+        if (idx <= 0) return prev;
+        const target = prev[idx];
+        return [target, ...prev.filter((_, i) => i !== idx)];
+      });
     }
     setInputMessage("");
   };
@@ -858,6 +972,7 @@ export default function App() {
   // PROFILE MODAL
   // ──────────────────────────────────────────────────────────────
   const openUserProfile = async (userId, initialTab = "profile") => {
+    pushNavState("profile");
     setViewingProfileId(userId);
     setIsEditingProfile(false);
     setProfileTab(initialTab);
@@ -1304,6 +1419,7 @@ export default function App() {
   };
 
   const openRoomSettings = async (room) => {
+    pushNavState("room_settings");
     setRoomSettingsData(room);
     setEditRoomTitle(room.title);
     setEditRoomDesc(room.description || "");
@@ -1459,6 +1575,7 @@ export default function App() {
   };
 
   const openRoomInfo = async (room) => {
+    pushNavState("room_info");
     setViewingRoomInfo(room);
     loadRoomParticipants(room.slug);
   };
@@ -1667,7 +1784,7 @@ export default function App() {
           setDemoGender={setDemoGender}
           handleDemoLogin={handleDemoLogin}
           isLoggedIn={Boolean(token && currentUser)}
-          onLaunchApp={() => setShowLandingPage(false)}
+          onLaunchApp={() => handleSystemOrInAppBack(() => setShowLandingPage(false))}
           authError={authError}
           loginNotice={loginNotice}
           showAuthModal={showAuthModal}
@@ -1698,6 +1815,7 @@ export default function App() {
     viewMode === "mate" ||
     viewMode === "mate_chat" ||
     viewMode === "explore" ||
+    viewMode === "announcements" ||
     activeTab.id
   );
 
@@ -1853,13 +1971,13 @@ export default function App() {
 
       <button
         type="button"
-        className={`mobile-nav-btn ${viewMode === "chat" && mobileTab === "announcements" && !viewingProfileId && !roomSettingsOpen && !viewingRoomInfo ? "active" : ""}`}
+        className={`mobile-nav-btn ${viewMode === "announcements" && !viewingProfileId && !roomSettingsOpen && !viewingRoomInfo ? "active" : ""}`}
         onClick={() => {
           setViewingProfileId(null);
           setRoomSettingsOpen(false);
           setViewingRoomInfo(null);
-          setViewMode("chat");
-          setMobileTab("announcements");
+          pushNavState("announcements");
+          setViewMode("announcements");
           setActiveTab({ type: "room", id: null, data: null });
         }}
         title="Announcements"
@@ -1867,11 +1985,6 @@ export default function App() {
       >
         <div className="mobile-nav-icon-wrap">
           <Megaphone size={21} />
-          {totalRoomUnreadCount > 0 && (
-            <span className="mobile-nav-badge">
-              {totalRoomUnreadCount > 99 ? "99+" : totalRoomUnreadCount}
-            </span>
-          )}
         </div>
       </button>
 
@@ -1882,6 +1995,7 @@ export default function App() {
           setViewingProfileId(null);
           setRoomSettingsOpen(false);
           setViewingRoomInfo(null);
+          pushNavState("explore");
           setViewMode("explore");
           loadExploreUsers(searchQuery);
         }}
@@ -1900,6 +2014,7 @@ export default function App() {
           setViewingProfileId(null);
           setRoomSettingsOpen(false);
           setViewingRoomInfo(null);
+          pushNavState("mate");
           handleNavigateMate();
         }}
         title="Mate"
@@ -1954,11 +2069,8 @@ export default function App() {
                 >
                   {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
                 </button>
-                <button className="btn-section-action" title="About PairUP & Features" onClick={() => setShowLandingPage(true)}>
+                <button className="btn-section-action" title="About PairUP & Features" onClick={() => { pushNavState("landing_page"); setShowLandingPage(true); }}>
                   <Info size={17} />
-                </button>
-                <button className="btn-section-action desktop-only" title="Explore Friends" onClick={() => { setViewMode("explore"); loadExploreUsers(searchQuery); }}>
-                  <Users size={17} />
                 </button>
                 <button className="btn-section-action sidebar-collapse-btn" title="Collapse sidebar" onClick={toggleSidebar}>
                   <PanelLeftClose size={17} />
@@ -1980,7 +2092,7 @@ export default function App() {
               >
                 {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               </button>
-              <button className="btn-section-action" title="About PairUP" onClick={() => setShowLandingPage(true)}>
+              <button className="btn-section-action" title="About PairUP" onClick={() => { pushNavState("landing_page"); setShowLandingPage(true); }}>
                 <Info size={17} />
               </button>
             </div>
@@ -2000,8 +2112,17 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={`nav-tab-btn ${viewMode === "announcements" ? "active" : ""}`}
+            onClick={() => { pushNavState("announcements"); setViewMode("announcements"); }}
+            title="Announcements & Rooms"
+          >
+            <Megaphone size={16} />
+            {!isSidebarCollapsed && <span>Announcements</span>}
+          </button>
+          <button
+            type="button"
             className={`nav-tab-btn ${viewMode === "explore" ? "active" : ""}`}
-            onClick={() => { setViewMode("explore"); loadExploreUsers(searchQuery); }}
+            onClick={() => { pushNavState("explore"); setViewMode("explore"); loadExploreUsers(searchQuery); }}
             title="Explore Friends"
           >
             <Users size={16} />
@@ -2010,7 +2131,7 @@ export default function App() {
           <button
             type="button"
             className={`nav-tab-btn ${viewMode === "mate" || viewMode === "mate_chat" ? "active" : ""}`}
-            onClick={handleNavigateMate}
+            onClick={() => { pushNavState("mate"); handleNavigateMate(); }}
             title="Mate - Anonymous Matchmaking"
           >
             <Sparkles size={16} />
@@ -2024,35 +2145,38 @@ export default function App() {
         </div>
 
         <div className="sidebar-scroll">
-          {/* Chat Rooms / Announcements */}
-          <div className={`sidebar-rooms-section ${mobileTab !== "announcements" ? "mobile-hidden" : ""}`}>
+          {/* Chat Rooms */}
+          <div className="sidebar-rooms-section">
             {!isSidebarCollapsed ? (
               <div className="section-label">
-                <span className="desktop-only">Rooms</span>
-                <span className="mobile-only">Announcements</span>
-                <button className="btn-section-action" title="Create Room" onClick={() => setIsCreateRoomOpen(true)}>
+                <span>Rooms</span>
+                <button className="btn-section-action" title="Create Room" onClick={() => { pushNavState("create_room"); setIsCreateRoomOpen(true); }}>
                   <Plus size={15} />
                 </button>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "4px" }}>
                 <div className="sidebar-collapsed-section-divider" title="Rooms" />
-                <button className="sidebar-collapsed-action-btn" title="Create Room" onClick={() => setIsCreateRoomOpen(true)}>
+                <button className="sidebar-collapsed-action-btn" title="Create Room" onClick={() => { pushNavState("create_room"); setIsCreateRoomOpen(true); }}>
                   <Plus size={14} />
                 </button>
               </div>
             )}
 
-            {rooms.length === 0 ? (
-              !isSidebarCollapsed ? (
-                <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
-                  <span className="desktop-only">No rooms yet. Be the first to create one!</span>
-                  <span className="mobile-only">No announcements yet. Be the first to create one!</span>
-                </div>
-              ) : null
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: isSidebarCollapsed ? "6px" : "3px" }}>
-                {rooms.map(room => {
+            {(() => {
+              const userJoinedRooms = rooms.filter(
+                room => isCurrentUserModerator(room) || room.is_member || room.creator_id === currentUser?.id
+              );
+              if (userJoinedRooms.length === 0) {
+                return !isSidebarCollapsed ? (
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
+                    No joined rooms yet. Discover rooms in <button type="button" className="btn-link-inline" onClick={() => { pushNavState("announcements"); setViewMode("announcements"); }}>Announcements</button>!
+                  </div>
+                ) : null;
+              }
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: isSidebarCollapsed ? "6px" : "3px" }}>
+                  {userJoinedRooms.map(room => {
                   const isActive = viewMode === "chat" && activeTab.type === "room" && activeTab.id === room.slug;
                   const isMod = isCurrentUserModerator(room);
                   const roomUnread = unreadCounts[`room_${room.slug.toLowerCase()}`] || 0;
@@ -2118,11 +2242,12 @@ export default function App() {
                   );
                 })}
               </div>
-            )}
+            );
+          })()}
           </div>
 
           {/* Direct Messages */}
-          <div className={`sidebar-dms-section ${mobileTab !== "chat" ? "mobile-hidden" : ""}`}>
+          <div className="sidebar-dms-section">
             {!isSidebarCollapsed ? (
               <div className="section-label">
                 <span>Direct Messages</span>
@@ -2246,7 +2371,7 @@ export default function App() {
             <button
               type="button"
               className="btn-back"
-              onClick={() => { setViewingProfileId(null); setIsEditingProfile(false); }}
+              onClick={() => handleSystemOrInAppBack(() => { setViewingProfileId(null); setIsEditingProfile(false); })}
               title="Back"
             >
               <ArrowLeft size={19} />
@@ -2612,7 +2737,7 @@ export default function App() {
             <button
               type="button"
               className="btn-back"
-              onClick={() => setRoomSettingsOpen(false)}
+              onClick={() => handleSystemOrInAppBack(() => setRoomSettingsOpen(false))}
               title="Back to Room"
             >
               <ArrowLeft size={19} />
@@ -3093,7 +3218,7 @@ export default function App() {
             <button
               type="button"
               className="btn-back"
-              onClick={() => setViewingRoomInfo(null)}
+              onClick={() => handleSystemOrInAppBack(() => setViewingRoomInfo(null))}
               title="Back to Room"
             >
               <ArrowLeft size={19} />
@@ -3300,7 +3425,7 @@ export default function App() {
             <button
               type="button"
               className="btn-back"
-              onClick={() => setViewMode("chat")}
+              onClick={() => handleSystemOrInAppBack(() => setViewMode("chat"))}
               title="Back to chats"
             >
               <ArrowLeft size={19} />
@@ -3684,14 +3809,14 @@ export default function App() {
             <button
               type="button"
               className="btn-back"
-              onClick={() => setViewMode("chat")}
+              onClick={() => handleSystemOrInAppBack(() => setViewMode("chat"))}
               title="Back to chats"
             >
               <ArrowLeft size={19} />
             </button>
             <div style={{ flex: 1, minWidth: 0 }}>
               <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>Explore Friends</h2>
-              <div className="header-topic">Discover people and send friend requests to chat</div>
+              <div className="header-topic">Discover people and connect with friends</div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               {renderNotificationBell()}
@@ -3712,12 +3837,46 @@ export default function App() {
               <input type="text" placeholder="Search by username or display name..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="chat-input" />
             </div>
 
-            <div className="explore-grid">
-              {exploreUsersList.length === 0 ? (
-                <div style={{ gridColumn: "1/-1", textAlign: "center", color: "var(--text-dim)", padding: "40px 0" }}>
-                  {searchQuery ? `No users found for "${searchQuery}"` : "Start searching for friends above!"}
-                </div>
-              ) : exploreUsersList.map(u => (
+            {/* Explore Categorization Toggle */}
+            <div className="explore-filter-toggle">
+              <button
+                type="button"
+                className={`toggle-pill-btn ${exploreFilter === "all" ? "active" : ""}`}
+                onClick={() => setExploreFilter("all")}
+              >
+                <Users size={14} />
+                <span>All Users</span>
+                <span className="toggle-pill-count">{exploreUsersList.length}</span>
+              </button>
+              <button
+                type="button"
+                className={`toggle-pill-btn ${exploreFilter === "friends" ? "active" : ""}`}
+                onClick={() => setExploreFilter("friends")}
+              >
+                <UserCheck size={14} />
+                <span>My Friends</span>
+                <span className="toggle-pill-count">
+                  {exploreUsersList.filter(u => u.friendship_status === "accepted").length}
+                </span>
+              </button>
+            </div>
+
+            {(() => {
+              const displayedExploreUsers = exploreFilter === "friends"
+                ? exploreUsersList.filter(u => u.friendship_status === "accepted")
+                : exploreUsersList;
+
+              return (
+                <div className="explore-grid">
+                  {displayedExploreUsers.length === 0 ? (
+                    <div style={{ gridColumn: "1/-1", textAlign: "center", color: "var(--text-dim)", padding: "40px 0" }}>
+                      {exploreFilter === "friends"
+                        ? "You haven't added any friends yet. Switch to 'All Users' to discover people and send requests!"
+                        : searchQuery
+                        ? `No users found for "${searchQuery}"`
+                        : "Start searching for friends above!"}
+                    </div>
+                  ) : displayedExploreUsers.map(u => (
                 <div key={u.id} className="user-card">
                   <div className="user-card-header" onClick={() => openUserProfile(u.id)}>
                     <div className="user-avatar" style={{ width: "42px", height: "42px" }}>
@@ -3780,6 +3939,181 @@ export default function App() {
                 </div>
               ))}
             </div>
+          );
+        })()}
+          </div>
+          {renderMobileBottomNav()}
+        </main>
+      ) : viewMode === "announcements" ? (
+        <main className="page-stage announcements-stage">
+          <header className="page-header">
+            <button
+              type="button"
+              className="btn-back"
+              onClick={() => handleSystemOrInAppBack(() => setViewMode("chat"))}
+              title="Back to chats"
+            >
+              <ArrowLeft size={19} />
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>Announcements & Rooms</h2>
+              <div className="header-topic">Discover community rooms and view platform announcements</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {renderNotificationBell()}
+              <button
+                type="button"
+                className="btn-icon"
+                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                onClick={toggleTheme}
+              >
+                {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+              </button>
+            </div>
+          </header>
+
+          <div className="page-content-scroll announcements-content-scroll">
+            {/* Category Toggle: Rooms vs Announcements */}
+            <div className="category-toggle-container">
+              <button
+                type="button"
+                className={`toggle-pill-btn ${announcementsTab === "rooms" ? "active" : ""}`}
+                onClick={() => setAnnouncementsTab("rooms")}
+              >
+                <Hash size={15} />
+                <span>Rooms</span>
+                <span className="toggle-pill-count">{rooms.length}</span>
+              </button>
+              <button
+                type="button"
+                className={`toggle-pill-btn ${announcementsTab === "announcements" ? "active" : ""}`}
+                onClick={() => setAnnouncementsTab("announcements")}
+              >
+                <Megaphone size={15} />
+                <span>Announcements</span>
+              </button>
+            </div>
+
+            {announcementsTab === "announcements" ? (
+              <div className="announcements-under-construction">
+                <div className="construction-icon-wrapper">
+                  <Construction size={40} className="construction-icon" />
+                </div>
+                <h3 className="construction-title">Under Construction</h3>
+                <p className="construction-text">
+                  The announcements broadcast feature is currently under construction. Soon, verified moderators and administrators will publish pinned bulletins, alerts, and live event updates here.
+                </p>
+                <div className="construction-badge">
+                  <Sparkles size={14} /> Coming Soon
+                </div>
+              </div>
+            ) : (
+              <div className="rooms-discovery-section">
+                <div className="rooms-discovery-toolbar">
+                  <div className="explore-search-bar" style={{ flex: 1, marginBottom: 0 }}>
+                    <Search size={18} color="var(--text-dim)" />
+                    <input
+                      type="text"
+                      placeholder="Search rooms by title, description or slug..."
+                      value={roomsFilterQuery}
+                      onChange={e => setRoomsFilterQuery(e.target.value)}
+                      className="chat-input"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{ padding: "10px 16px", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    onClick={() => { pushNavState("create_room"); setIsCreateRoomOpen(true); }}
+                  >
+                    <Plus size={16} /> Create Room
+                  </button>
+                </div>
+
+                {(() => {
+                  const filteredRooms = roomsFilterQuery.trim()
+                    ? rooms.filter(r =>
+                        r.title.toLowerCase().includes(roomsFilterQuery.toLowerCase()) ||
+                        r.slug.toLowerCase().includes(roomsFilterQuery.toLowerCase()) ||
+                        (r.description && r.description.toLowerCase().includes(roomsFilterQuery.toLowerCase()))
+                      )
+                    : rooms;
+
+                  return (
+                    <div className="rooms-discovery-grid">
+                      {filteredRooms.length === 0 ? (
+                        <div style={{ gridColumn: "1/-1", textAlign: "center", color: "var(--text-dim)", padding: "40px 0" }}>
+                          {roomsFilterQuery ? `No rooms found matching "${roomsFilterQuery}"` : "No rooms available right now. Click '+ Create Room' to start one!"}
+                        </div>
+                      ) : (
+                        filteredRooms.map(room => {
+                          const isMod = isCurrentUserModerator(room);
+                          const isJoined = isMod || room.is_member || room.creator_id === currentUser?.id;
+                          return (
+                            <div key={room.slug} className="room-discovery-card">
+                              <div className="room-card-top">
+                                {room.picture ? (
+                                  <img src={`${API_BASE}${room.picture}`} alt={room.title} className="room-card-avatar" />
+                                ) : (
+                                  <div className="room-card-avatar-hash">
+                                    <Hash size={22} />
+                                  </div>
+                                )}
+                                <div className="room-card-info">
+                                  <div className="room-card-title-row">
+                                    <h4 className="room-card-title">{room.title}</h4>
+                                    <span className={room.is_private ? "badge-private" : "badge-public"}>
+                                      {room.is_private ? <Lock size={11} /> : <Globe size={11} />}
+                                      {room.is_private ? "Private" : "Public"}
+                                    </span>
+                                  </div>
+                                  <span className="room-card-slug">#{room.slug}</span>
+                                </div>
+                              </div>
+
+                              {room.description && (
+                                <p className="room-card-desc">{room.description}</p>
+                              )}
+
+                              <div className="room-card-meta">
+                                <span>
+                                  <span className="status-dot online" style={{ display: "inline-block", marginRight: "4px" }} />
+                                  {room.online_count || 0} online
+                                </span>
+                                {isMod && <span className="badge-moderator">Moderator</span>}
+                                {!isMod && isJoined && <span className="badge-member">Joined</span>}
+                              </div>
+
+                              <div className="room-card-actions">
+                                <button
+                                  type="button"
+                                  className="btn-primary"
+                                  style={{ flex: 1, padding: "8px 12px", fontSize: "0.84rem" }}
+                                  onClick={() => {
+                                    setViewMode("chat");
+                                    selectTab("room", room.slug, room);
+                                  }}
+                                >
+                                  <MessageSquare size={14} /> Enter Room
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  style={{ padding: "8px 12px", fontSize: "0.84rem" }}
+                                  onClick={() => openRoomInfo(room)}
+                                >
+                                  Info
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
           {renderMobileBottomNav()}
         </main>
@@ -3792,7 +4126,7 @@ export default function App() {
               <button
                 type="button"
                 className="btn-back"
-                onClick={() => setActiveTab({ type: "room", id: null, data: null })}
+                onClick={() => handleSystemOrInAppBack(() => setActiveTab({ type: "room", id: null, data: null }))}
                 title="Back to chats"
               >
                 <ArrowLeft size={19} />
@@ -3816,11 +4150,6 @@ export default function App() {
                   <>
                     <h2>
                       {activeTab.type === "room" ? activeRoom?.title : activeDirectUser?.name}
-                      {activeTab.type === "direct" && activeDirectUser?.gender && (
-                        <span className={getGenderBadgeClass(activeDirectUser.gender)} style={{ marginLeft: "8px" }}>
-                          {activeDirectUser.gender}
-                        </span>
-                      )}
                     </h2>
                     <div className="header-topic">
                       {activeTab.type === "room"
@@ -3958,14 +4287,6 @@ export default function App() {
                 </div>
               )}
               {renderNotificationBell("topright")}
-              <button
-                type="button"
-                className="btn-icon-sm"
-                title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-                onClick={toggleTheme}
-              >
-                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-              </button>
             </div>
           </header>
 
@@ -4043,11 +4364,11 @@ export default function App() {
           CREATE ROOM MODAL
       ══════════════════════════════════════════════════════════ */}
       {isCreateRoomOpen && (
-        <div className="modal-overlay" onClick={() => setIsCreateRoomOpen(false)}>
+        <div className="modal-overlay" onClick={() => handleSystemOrInAppBack(() => setIsCreateRoomOpen(false))}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Create Chat Room</h3>
-              <button className="btn-icon" onClick={() => setIsCreateRoomOpen(false)}><X size={18} /></button>
+              <button className="btn-icon" onClick={() => handleSystemOrInAppBack(() => setIsCreateRoomOpen(false))}><X size={18} /></button>
             </div>
             <form onSubmit={handleCreateRoom} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div>
