@@ -8,7 +8,7 @@ import {
   Upload, Image, ChevronDown, Crown, UserMinus, User as UserIcon,
   Heart, AlertCircle, CheckCircle2, Loader2, Flame,
   PanelLeftClose, PanelLeftOpen, ArrowLeft, Info, Sun, Moon,
-  Bell, Lock, Globe, Copy, Share2, MoreVertical, Eraser, Construction
+  Bell, Lock, Globe, Copy, Share2, MoreVertical, Eraser, Construction, LogIn
 } from 'lucide-react';
 
 const API_BASE = window.location.origin.includes(":5173")
@@ -201,6 +201,9 @@ export default function App() {
   const [viewingRoomInfo, setViewingRoomInfo] = useState(null);
   const [roomParticipants, setRoomParticipants] = useState([]);
   const [loadingRoomInfo, setLoadingRoomInfo] = useState(false);
+
+  // Public Room Join Confirmation Modal
+  const [roomJoinPrompt, setRoomJoinPrompt] = useState(null);
 
   // Active Chat Options Menu (Three Dots)
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
@@ -879,10 +882,118 @@ export default function App() {
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { mateMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [mateMessages]);
 
+  const parseSafeDate = (d) => {
+    if (!d) return null;
+    if (d instanceof Date) return d;
+    let s = String(d).trim();
+    if (!s) return null;
+    if ((s.includes("T") || s.includes(" ")) && !s.endsWith("Z") && !/[+-]\d{2}:\d{2}$/.test(s) && !/[+-]\d{4}$/.test(s)) {
+      s = s.replace(" ", "T");
+      s += "Z";
+    }
+    const parsed = new Date(s);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const formatMessageTimestamp = (dateInput) => {
+    const d = parseSafeDate(dateInput);
+    if (!d) return "";
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday = d.toDateString() === yesterday.toDateString();
+
+    const timeStr = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+    if (isToday) return timeStr;
+    if (isYesterday) return `Yesterday, ${timeStr}`;
+    return `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${timeStr}`;
+  };
+
+  const isCurrentUserModerator = (room) =>
+    room?.moderators?.some(m => m.user_id === currentUser?.id);
+
+  const isCurrentUserPrimeModerator = (room) =>
+    room?.moderators?.some(m => m.user_id === currentUser?.id && m.is_prime);
+
+  const isUserRoomParticipant = (room) => {
+    if (!room || !currentUser) return false;
+    if (room.creator_id === currentUser.id) return true;
+    if (isCurrentUserModerator(room)) return true;
+    return Boolean(room.is_member);
+  };
+
+  const handleConfirmJoinPublicRoom = async (room) => {
+    if (!room) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/rooms/${room.slug}/join`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ code: null })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showSnackbar(data.message || `Joined #${room.title}!`);
+        const updatedRoom = { ...room, is_member: true };
+        setRooms(prev => prev.map(r => r.slug === room.slug ? updatedRoom : r));
+        setRoomJoinPrompt(null);
+        await loadRooms();
+        setViewMode("chat");
+        if (window.innerWidth <= 768) {
+          pushNavState("chat_active");
+        }
+        setViewingProfileId(null);
+        setRoomSettingsOpen(false);
+        setViewingRoomInfo(null);
+        setActiveTab({ type: "room", id: room.slug, data: updatedRoom });
+        setMessages([]);
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ action: "join_room", room_slug: room.slug }));
+        }
+        try {
+          const msgRes = await fetch(`${API_BASE}/api/rooms/${room.slug}/messages`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+          });
+          if (msgRes.ok) setMessages(await msgRes.json());
+        } catch (e) {}
+      } else {
+        alert(data.detail || "Could not join room");
+      }
+    } catch (e) {
+      alert("Failed to join room. Please check your network connection.");
+    }
+  };
+
+  const handleAttemptEnterRoom = (room) => {
+    if (!room) return;
+    if (isUserRoomParticipant(room)) {
+      setViewMode("chat");
+      selectTab("room", room.slug, room);
+      return;
+    }
+    if (room.is_private) {
+      openRoomInfo(room);
+      return;
+    }
+    setRoomJoinPrompt(room);
+  };
+
   // ──────────────────────────────────────────────────────────────
   // NAVIGATION
   // ──────────────────────────────────────────────────────────────
   const selectTab = async (type, id, dataObj) => {
+    if (type === "room") {
+      const targetRoom = dataObj || rooms.find(r => r.slug === id);
+      if (targetRoom && !isUserRoomParticipant(targetRoom)) {
+        if (targetRoom.is_private) {
+          openRoomInfo(targetRoom);
+        } else {
+          setRoomJoinPrompt(targetRoom);
+        }
+        return;
+      }
+    }
+
     if (window.innerWidth <= 768 && id) {
       pushNavState("chat_active");
     }
@@ -1614,7 +1725,8 @@ export default function App() {
         setViewingRoomInfo(null);
         setRoomSettingsOpen(false);
         setChatMenuOpen(false);
-        if (activeTab.type === "room" && activeTab.data?.slug === room.slug) {
+        setRooms(prev => prev.map(r => r.slug === room.slug ? { ...r, is_member: false } : r));
+        if (activeTab.type === "room" && (activeTab.data?.slug === room.slug || activeTab.id === room.slug)) {
           setActiveTab({ type: "direct", id: null, data: null });
         }
         loadRooms();
@@ -1759,12 +1871,6 @@ export default function App() {
       ? (user.avatar.startsWith("/api/") ? `${API_BASE}${user.avatar}` : user.avatar)
       : `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${user?.username || "user"}`;
 
-  const isCurrentUserModerator = (room) =>
-    room?.moderators?.some(m => m.user_id === currentUser?.id);
-
-  const isCurrentUserPrimeModerator = (room) =>
-    room?.moderators?.some(m => m.user_id === currentUser?.id && m.is_prime);
-
   const activeRoom = rooms.find(r => r.slug === activeTab.id) || activeTab.data;
   const activeDirectUser = directConversations.find(u => u.id === activeTab.id) || activeTab.data;
 
@@ -1889,7 +1995,7 @@ export default function App() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "6px" }}>
                       <span style={{ fontWeight: 600, fontSize: "0.84rem" }}>{item.title}</span>
                       <span style={{ fontSize: "0.68rem", color: "var(--text-dim)", whiteSpace: "nowrap" }}>
-                        {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+                        {formatMessageTimestamp(item.created_at)}
                       </span>
                     </div>
                     <p style={{ fontSize: "0.76rem", color: "var(--text-muted)", margin: "2px 0 6px", lineHeight: "1.3" }}>
@@ -2145,6 +2251,77 @@ export default function App() {
         </div>
 
         <div className="sidebar-scroll">
+          {/* Direct Messages */}
+          <div className="sidebar-dms-section">
+            {!isSidebarCollapsed ? (
+              <div className="section-label">
+                <span>Direct Messages</span>
+              </div>
+            ) : (
+              <div className="sidebar-collapsed-section-divider" title="Direct Messages" style={{ margin: "10px auto 6px" }} />
+            )}
+
+            {directConversations.length === 0 ? (
+              !isSidebarCollapsed ? (
+                <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
+                  No active chats. Add friends from <strong>Explore</strong> to chat!
+                </div>
+              ) : null
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: isSidebarCollapsed ? "6px" : "3px" }}>
+                {directConversations.map(u => {
+                  const isActive = viewMode === "chat" && activeTab.type === "direct" && activeTab.id === u.id;
+                  const isOnline = onlineUserIds.has(u.id);
+                  const directUnread = unreadCounts[`direct_${u.id}`] || 0;
+                  return !isSidebarCollapsed ? (
+                    <div
+                      key={u.id}
+                      className={`nav-item ${isActive ? "active" : ""}`}
+                      onClick={() => selectTab("direct", u.id, u)}
+                      title={`${u.name} (@${u.username})`}
+                    >
+                      <div className="user-avatar">
+                        <img src={avatarSrc(u)} alt={u.name} />
+                        <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
+                      </div>
+                      <div className="nav-item-text-col">
+                        <div className="nav-item-name">{u.name}</div>
+                        <div className="nav-item-handle">@{u.username}</div>
+                      </div>
+                      {u.gender && (
+                        <span className={getGenderBadgeClass(u.gender)} style={{ fontSize: "0.62rem", padding: "1px 5px" }}>
+                          {u.gender}
+                        </span>
+                      )}
+                      {directUnread > 0 && (
+                        <span className="unread-counter-badge" title={`${directUnread} unread message${directUnread > 1 ? "s" : ""}`}>
+                          {directUnread > 99 ? "99+" : directUnread}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      key={u.id}
+                      className={`nav-item collapsed-nav-item ${isActive ? "active" : ""}`}
+                      onClick={() => selectTab("direct", u.id, u)}
+                      title={`${u.name} (@${u.username})${u.gender ? ` • ${u.gender}` : ""}${directUnread > 0 ? ` (${directUnread} new)` : ""}`}
+                    >
+                      <div className="user-avatar">
+                        <img src={avatarSrc(u)} alt={u.name} />
+                        <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
+                      </div>
+                      {directUnread > 0 && (
+                        <span className="unread-counter-badge collapsed">
+                          {directUnread > 99 ? "99+" : directUnread}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Chat Rooms */}
           <div className="sidebar-rooms-section">
             {!isSidebarCollapsed ? (
@@ -2164,9 +2341,7 @@ export default function App() {
             )}
 
             {(() => {
-              const userJoinedRooms = rooms.filter(
-                room => isCurrentUserModerator(room) || room.is_member || room.creator_id === currentUser?.id
-              );
+              const userJoinedRooms = rooms.filter(room => isUserRoomParticipant(room));
               if (userJoinedRooms.length === 0) {
                 return !isSidebarCollapsed ? (
                   <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
@@ -2244,77 +2419,6 @@ export default function App() {
               </div>
             );
           })()}
-          </div>
-
-          {/* Direct Messages */}
-          <div className="sidebar-dms-section">
-            {!isSidebarCollapsed ? (
-              <div className="section-label">
-                <span>Direct Messages</span>
-              </div>
-            ) : (
-              <div className="sidebar-collapsed-section-divider" title="Direct Messages" style={{ margin: "10px auto 6px" }} />
-            )}
-
-            {directConversations.length === 0 ? (
-              !isSidebarCollapsed ? (
-                <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
-                  No active chats. Add friends from <strong>Explore</strong> to chat!
-                </div>
-              ) : null
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: isSidebarCollapsed ? "6px" : "3px" }}>
-                {directConversations.map(u => {
-                  const isActive = viewMode === "chat" && activeTab.type === "direct" && activeTab.id === u.id;
-                  const isOnline = onlineUserIds.has(u.id);
-                  const directUnread = unreadCounts[`direct_${u.id}`] || 0;
-                  return !isSidebarCollapsed ? (
-                    <div
-                      key={u.id}
-                      className={`nav-item ${isActive ? "active" : ""}`}
-                      onClick={() => selectTab("direct", u.id, u)}
-                      title={`${u.name} (@${u.username})`}
-                    >
-                      <div className="user-avatar">
-                        <img src={avatarSrc(u)} alt={u.name} />
-                        <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
-                      </div>
-                      <div className="nav-item-text-col">
-                        <div className="nav-item-name">{u.name}</div>
-                        <div className="nav-item-handle">@{u.username}</div>
-                      </div>
-                      {u.gender && (
-                        <span className={getGenderBadgeClass(u.gender)} style={{ fontSize: "0.62rem", padding: "1px 5px" }}>
-                          {u.gender}
-                        </span>
-                      )}
-                      {directUnread > 0 && (
-                        <span className="unread-counter-badge" title={`${directUnread} unread message${directUnread > 1 ? "s" : ""}`}>
-                          {directUnread > 99 ? "99+" : directUnread}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div
-                      key={u.id}
-                      className={`nav-item collapsed-nav-item ${isActive ? "active" : ""}`}
-                      onClick={() => selectTab("direct", u.id, u)}
-                      title={`${u.name} (@${u.username})${u.gender ? ` • ${u.gender}` : ""}${directUnread > 0 ? ` (${directUnread} new)` : ""}`}
-                    >
-                      <div className="user-avatar">
-                        <img src={avatarSrc(u)} alt={u.name} />
-                        <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
-                      </div>
-                      {directUnread > 0 && (
-                        <span className="unread-counter-badge collapsed">
-                          {directUnread > 99 ? "99+" : directUnread}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         </div>
 
@@ -3407,13 +3511,30 @@ export default function App() {
 
               {currentUser?.id !== viewingRoomInfo.creator_id && (
                 <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-subtle)" }}>
-                  <button
-                    type="button"
-                    className="btn-exit-room"
-                    onClick={() => handleExitRoom(viewingRoomInfo)}
-                  >
-                    <LogOut size={16} /> Exit Room
-                  </button>
+                  {isUserRoomParticipant(viewingRoomInfo) ? (
+                    <button
+                      type="button"
+                      className="btn-exit-room"
+                      onClick={() => handleExitRoom(viewingRoomInfo)}
+                    >
+                      <LogOut size={16} /> Exit Room
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ width: "100%", justifyContent: "center", padding: "10px 16px" }}
+                      onClick={() => {
+                        if (viewingRoomInfo.is_private) {
+                          setInviteFromUrl(viewingRoomInfo.slug);
+                        } else {
+                          setRoomJoinPrompt(viewingRoomInfo);
+                        }
+                      }}
+                    >
+                      <LogIn size={16} /> Join Room
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -3739,7 +3860,7 @@ export default function App() {
             ) : (
               mateMessages.map(msg => {
                 const isOutgoing = msg.sender_nickname === mateConversationData?.my_nickname;
-                const time = msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+                const time = formatMessageTimestamp(msg.created_at);
                 const emoji = ANIMAL_EMOJIS[msg.sender_nickname] || "🐾";
                 return (
                   <div key={msg.id || Math.random()} className={`message-card ${isOutgoing ? "outgoing" : ""}`}>
@@ -3832,33 +3953,35 @@ export default function App() {
           </header>
 
           <div className="page-content-scroll explore-content-scroll">
-            <div className="explore-search-bar">
-              <Search size={18} color="var(--text-dim)" />
-              <input type="text" placeholder="Search by username or display name..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="chat-input" />
-            </div>
+            <div className="explore-toolbar">
+              <div className="explore-search-bar">
+                <Search size={18} color="var(--text-dim)" />
+                <input type="text" placeholder="Search by username or display name..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="chat-input" />
+              </div>
 
-            {/* Explore Categorization Toggle */}
-            <div className="explore-filter-toggle">
-              <button
-                type="button"
-                className={`toggle-pill-btn ${exploreFilter === "all" ? "active" : ""}`}
-                onClick={() => setExploreFilter("all")}
-              >
-                <Users size={14} />
-                <span>All Users</span>
-                <span className="toggle-pill-count">{exploreUsersList.length}</span>
-              </button>
-              <button
-                type="button"
-                className={`toggle-pill-btn ${exploreFilter === "friends" ? "active" : ""}`}
-                onClick={() => setExploreFilter("friends")}
-              >
-                <UserCheck size={14} />
-                <span>My Friends</span>
-                <span className="toggle-pill-count">
-                  {exploreUsersList.filter(u => u.friendship_status === "accepted").length}
-                </span>
-              </button>
+              {/* Explore Categorization Toggle */}
+              <div className="explore-filter-toggle">
+                <button
+                  type="button"
+                  className={`toggle-pill-btn ${exploreFilter === "all" ? "active" : ""}`}
+                  onClick={() => setExploreFilter("all")}
+                >
+                  <Users size={14} />
+                  <span>All Users</span>
+                  <span className="toggle-pill-count">{exploreUsersList.length}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`toggle-pill-btn ${exploreFilter === "friends" ? "active" : ""}`}
+                  onClick={() => setExploreFilter("friends")}
+                >
+                  <UserCheck size={14} />
+                  <span>My Friends</span>
+                  <span className="toggle-pill-count">
+                    {exploreUsersList.filter(u => u.friendship_status === "accepted").length}
+                  </span>
+                </button>
+              </div>
             </div>
 
             {(() => {
@@ -4048,7 +4171,7 @@ export default function App() {
                       ) : (
                         filteredRooms.map(room => {
                           const isMod = isCurrentUserModerator(room);
-                          const isJoined = isMod || room.is_member || room.creator_id === currentUser?.id;
+                          const isJoined = isUserRoomParticipant(room);
                           return (
                             <div key={room.slug} className="room-discovery-card">
                               <div className="room-card-top">
@@ -4089,10 +4212,7 @@ export default function App() {
                                   type="button"
                                   className="btn-primary"
                                   style={{ flex: 1, padding: "8px 12px", fontSize: "0.84rem" }}
-                                  onClick={() => {
-                                    setViewMode("chat");
-                                    selectTab("room", room.slug, room);
-                                  }}
+                                  onClick={() => handleAttemptEnterRoom(room)}
                                 >
                                   <MessageSquare size={14} /> Enter Room
                                 </button>
@@ -4258,16 +4378,18 @@ export default function App() {
                             </button>
                           )}
                           {currentUser?.id !== activeRoom.creator_id ? (
-                            <button
-                              type="button"
-                              className="chat-menu-item text-danger"
-                              onClick={() => {
-                                setChatMenuOpen(false);
-                                handleExitRoom(activeRoom);
-                              }}
-                            >
-                              <LogOut size={14} /> Exit Room
-                            </button>
+                            isUserRoomParticipant(activeRoom) && (
+                              <button
+                                type="button"
+                                className="chat-menu-item text-danger"
+                                onClick={() => {
+                                  setChatMenuOpen(false);
+                                  handleExitRoom(activeRoom);
+                                }}
+                              >
+                                <LogOut size={14} /> Exit Room
+                              </button>
+                            )
                           ) : (
                             <button
                               type="button"
@@ -4298,6 +4420,24 @@ export default function App() {
                 <p style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "8px" }}>Welcome to PairUP</p>
                 <p style={{ fontSize: "0.88rem" }}>Pick a room or a direct conversation from the sidebar to start chatting.</p>
               </div>
+            ) : activeTab.type === "room" && activeRoom && !isUserRoomParticipant(activeRoom) ? (
+              <div className="room-locked-placeholder">
+                <div className="room-locked-icon-wrap">
+                  <Lock size={30} />
+                </div>
+                <h3>Participant Only</h3>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", margin: "4px 0 16px" }}>
+                  You are not a participant of #{activeRoom.title}. Join this room to view messages and participate in chat.
+                </p>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{ padding: "9px 22px", fontSize: "0.9rem" }}
+                  onClick={() => setRoomJoinPrompt(activeRoom)}
+                >
+                  Join #{activeRoom.title}
+                </button>
+              </div>
             ) : messages.length === 0 ? (
               <div style={{ margin: "auto", textAlign: "center", padding: "40px", color: "var(--text-dim)" }}>
                 <p>No messages here yet. Say hello!</p>
@@ -4307,7 +4447,7 @@ export default function App() {
                 <div key={msg.id} className="notice-line">{msg.text}</div>
               );
               const isOutgoing = msg.sender_id === currentUser.id;
-              const time = msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+              const time = formatMessageTimestamp(msg.created_at);
               return (
                 <div key={msg.id || Math.random()} className={`message-card ${isOutgoing ? "outgoing" : ""}`}>
                   <div className="user-avatar" style={{ width: "34px", height: "34px" }} onClick={() => openUserProfile(msg.sender_id)} title="View Profile">
@@ -4346,13 +4486,26 @@ export default function App() {
               <input
                 type="text"
                 className="chat-input"
-                placeholder={activeTab.id ? (activeTab.type === "room" ? `Message ${activeRoom?.title || "room"}...` : `Message ${activeDirectUser?.name || "user"}...`) : "Select a chat first..."}
+                placeholder={
+                  !activeTab.id
+                    ? "Select a chat first..."
+                    : activeTab.type === "room" && activeRoom && !isUserRoomParticipant(activeRoom)
+                    ? `Join #${activeRoom?.title || "room"} to participate...`
+                    : activeTab.type === "room"
+                    ? `Message ${activeRoom?.title || "room"}...`
+                    : `Message ${activeDirectUser?.name || "user"}...`
+                }
                 value={inputMessage}
                 onChange={handleInputChange}
-                disabled={!activeTab.id}
+                disabled={!activeTab.id || (activeTab.type === "room" && activeRoom && !isUserRoomParticipant(activeRoom))}
                 maxLength={5000}
               />
-              <button type="submit" className="btn-send" disabled={!inputMessage.trim() || !activeTab.id} title="Send">
+              <button
+                type="submit"
+                className="btn-send"
+                disabled={!inputMessage.trim() || !activeTab.id || (activeTab.type === "room" && activeRoom && !isUserRoomParticipant(activeRoom))}
+                title="Send"
+              >
                 <Send size={16} />
               </button>
             </form>
@@ -4463,6 +4616,37 @@ export default function App() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Public Room Join Confirmation Modal */}
+      {roomJoinPrompt && (
+        <div className="modal-overlay" onClick={() => setRoomJoinPrompt(null)}>
+          <div className="modal-card room-join-prompt-modal" onClick={e => e.stopPropagation()}>
+            <div className="room-join-icon-wrap">
+              <Hash size={30} />
+            </div>
+            <h3 className="room-join-title">Want to join #{roomJoinPrompt.title}?</h3>
+            <p className="room-join-desc">
+              {roomJoinPrompt.description || "Join this room to participate in conversations, share messages, and keep it in your side panel."}
+            </p>
+            <div className="room-join-actions">
+              <button
+                type="button"
+                className="btn-primary room-join-btn-confirm"
+                onClick={() => handleConfirmJoinPublicRoom(roomJoinPrompt)}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                className="btn-secondary room-join-btn-cancel"
+                onClick={() => setRoomJoinPrompt(null)}
+              >
+                No
+              </button>
+            </div>
           </div>
         </div>
       )}

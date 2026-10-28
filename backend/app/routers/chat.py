@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import or_, and_, delete, func
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import os
 import uuid
@@ -114,25 +114,22 @@ async def _build_room_out(room: Room, db: AsyncSession, current_user_id: Optiona
         except Exception:
             pending_count = 0
 
-    # Check membership
-    is_member = True
-    if is_private_room:
-        if current_user_id:
-            if is_mod:
-                is_member = True
-            else:
-                try:
-                    res_mem = await db.execute(
-                        select(RoomMember).filter(
-                            RoomMember.room_id == room.id,
-                            RoomMember.user_id == current_user_id
-                        )
-                    )
-                    is_member = res_mem.scalars().first() is not None
-                except Exception:
-                    is_member = False
+    # Check membership (participant if creator, moderator, or joined RoomMember)
+    is_member = False
+    if current_user_id:
+        if (getattr(room, "creator_id", None) == current_user_id) or is_mod:
+            is_member = True
         else:
-            is_member = False
+            try:
+                res_mem = await db.execute(
+                    select(RoomMember).filter(
+                        RoomMember.room_id == room.id,
+                        RoomMember.user_id == current_user_id
+                    )
+                )
+                is_member = res_mem.scalars().first() is not None
+            except Exception:
+                is_member = False
 
     # Auto-generate invite_code for private room if missing
     invite_code = getattr(room, "invite_code", None)
@@ -1387,15 +1384,15 @@ async def get_room_messages(
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
-    if room.is_private:
-        if not current_user:
-            raise HTTPException(status_code=403, detail="This room is private. Please join to view messages.")
-        is_creator = (room.creator_id == current_user.id)
-        is_mod = await _is_moderator(db, room.id, current_user.id)
-        if not (is_creator or is_mod):
-            res_m = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == current_user.id))
-            if not res_m.scalars().first():
-                raise HTTPException(status_code=403, detail="This room is private. You must be an admitted member to view messages.")
+    if not current_user:
+        raise HTTPException(status_code=403, detail="Please log in and join this room to view messages.")
+    is_creator = (room.creator_id == current_user.id)
+    is_mod = await _is_moderator(db, room.id, current_user.id)
+    if not (is_creator or is_mod):
+        res_m = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == current_user.id))
+        if not res_m.scalars().first():
+            detail_msg = "This room is private. You must be an admitted member to view messages." if room.is_private else "You are not a participant in this room. Please join to view messages."
+            raise HTTPException(status_code=403, detail=detail_msg)
 
     res = await db.execute(
         select(Message, User)
@@ -1407,6 +1404,9 @@ async def get_room_messages(
     rows = res.all()
     messages = []
     for msg, sender in reversed(rows):
+        msg_date = msg.created_at
+        if msg_date and msg_date.tzinfo is None:
+            msg_date = msg_date.replace(tzinfo=timezone.utc)
         messages.append(MessageOut(
             id=msg.id,
             content=msg.content,
@@ -1417,7 +1417,7 @@ async def get_room_messages(
             sender_avatar=sender.avatar,
             room_id=room.id,
             recipient_id=None,
-            created_at=msg.created_at
+            created_at=msg_date
         ))
     return messages
 
@@ -1447,6 +1447,9 @@ async def get_direct_messages(
     rows = res.all()
     messages = []
     for msg, sender in reversed(rows):
+        msg_date = msg.created_at
+        if msg_date and msg_date.tzinfo is None:
+            msg_date = msg_date.replace(tzinfo=timezone.utc)
         messages.append(MessageOut(
             id=msg.id,
             content=msg.content,
@@ -1457,7 +1460,7 @@ async def get_direct_messages(
             sender_avatar=sender.avatar,
             room_id=None,
             recipient_id=msg.recipient_id,
-            created_at=msg.created_at
+            created_at=msg_date
         ))
     return messages
 

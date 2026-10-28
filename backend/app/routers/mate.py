@@ -197,7 +197,7 @@ async def get_conversation_messages(
             sender_nickname=m.sender_nickname,
             is_you=m.sender_id == current_user.id,
             content=m.content,
-            created_at=m.created_at
+            created_at=m.created_at.replace(tzinfo=timezone.utc) if m.created_at and m.created_at.tzinfo is None else m.created_at
         )
         for m in messages
     ]

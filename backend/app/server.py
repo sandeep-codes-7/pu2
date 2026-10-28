@@ -128,7 +128,7 @@ async def websocket_gateway(
                     try:
                         # Persist message to DB
                         msg_id = None
-                        created_at_iso = datetime.datetime.utcnow().isoformat()
+                        created_at_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
                         async with AsyncSessionLocal() as db:
                             res = await db.execute(select(Room).filter(Room.slug == slug))
                             room = res.scalars().first()
@@ -139,17 +139,17 @@ async def websocket_gateway(
                                 })
                                 continue
 
-                            if room.is_private:
-                                from app.models.entities import RoomModerator, RoomMember
-                                is_creator = (room.creator_id == user_info["id"])
-                                res_mod = await db.execute(select(RoomModerator).filter(RoomModerator.room_id == room.id, RoomModerator.user_id == user_info["id"]))
-                                res_mem = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == user_info["id"]))
-                                if not (is_creator or res_mod.scalars().first() or res_mem.scalars().first()):
-                                    await websocket.send_json({
-                                        "type": "error",
-                                        "message": "This room is private. You must be an admitted member to send messages."
-                                    })
-                                    continue
+                            from app.models.entities import RoomModerator, RoomMember
+                            is_creator = (room.creator_id == user_info["id"])
+                            res_mod = await db.execute(select(RoomModerator).filter(RoomModerator.room_id == room.id, RoomModerator.user_id == user_info["id"]))
+                            res_mem = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == user_info["id"]))
+                            if not (is_creator or res_mod.scalars().first() or res_mem.scalars().first()):
+                                msg_text = "This room is private. You must be an admitted member to send messages." if room.is_private else "You are not a participant in this room. Please join to send messages."
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": msg_text
+                                })
+                                continue
 
                             db_msg = Message(
                                 sender_id=user_info["id"],
@@ -212,7 +212,7 @@ async def websocket_gateway(
                         continue
 
                     msg_id = None
-                    created_at_iso = datetime.datetime.utcnow().isoformat()
+                    created_at_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
                     async with AsyncSessionLocal() as db:
                         db_msg = Message(
                             sender_id=user_info["id"],
@@ -315,7 +315,7 @@ async def websocket_gateway(
                         await db.commit()
                         await db.refresh(db_msg)
 
-                        created_at_iso = datetime.datetime.utcnow().isoformat()
+                        created_at_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
                         mate_msg_data = {
                             "type": "mate_message",
                             "id": db_msg.id,
