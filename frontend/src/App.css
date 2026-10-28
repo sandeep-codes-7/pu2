@@ -3651,7 +3651,6 @@ span.desktop-only {
   border: 1px solid var(--border-subtle);
   margin-bottom: 16px;
   max-width: 100%;
-  overflow-x: auto;
 }
 
 /* Room Join Pop-up Prompt & Locked State */
@@ -3891,10 +3890,74 @@ span.desktop-only {
 
 .rooms-discovery-toolbar {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   margin-bottom: 20px;
-  flex-wrap: wrap;
+  width: 100%;
+}
+
+.rooms-search-box {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #f4f4f5;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0 14px;
+  height: 42px;
+  transition: all 0.2s ease;
+}
+
+[data-theme="dark"] .rooms-search-box {
+  background: #18181b;
+  border-color: #27272a;
+}
+
+.rooms-search-box:focus-within {
+  background: #ffffff;
+  border-color: #18181b;
+  box-shadow: 0 0 0 1px #18181b;
+}
+
+[data-theme="dark"] .rooms-search-box:focus-within {
+  background: #1f1f23;
+  border-color: #3f3f46;
+  box-shadow: 0 0 0 1px #3f3f46;
+}
+
+.rooms-search-icon {
+  flex-shrink: 0;
+}
+
+.rooms-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--text-main);
+  font-size: 0.88rem;
+  padding: 0;
+}
+
+.rooms-search-input::placeholder {
+  color: var(--text-dim);
+}
+
+.btn-create-room {
+  flex-shrink: 0;
+  height: 42px;
+  padding: 0 16px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--radius-md);
 }
 
 .rooms-discovery-grid {
@@ -4066,4 +4129,115 @@ span.desktop-only {
   text-decoration: underline;
   cursor: pointer;
   font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ANNOUNCEMENTS & ROOMS RESPONSIVE MOBILE STYLES
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .announcements-content-scroll {
+    padding: 14px 14px 110px !important;
+  }
+
+  .category-toggle-container {
+    display: flex !important;
+    width: 100% !important;
+    margin-bottom: 14px !important;
+    padding: 4px !important;
+    box-sizing: border-box !important;
+    overflow-x: visible !important;
+  }
+
+  .category-toggle-container .toggle-pill-btn {
+    flex: 1 !important;
+    justify-content: center !important;
+    padding: 8px 10px !important;
+    font-size: 0.82rem !important;
+    gap: 6px !important;
+  }
+
+  .rooms-discovery-toolbar {
+    margin-bottom: 14px;
+    gap: 8px;
+  }
+
+  .rooms-search-box {
+    height: 40px;
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .rooms-search-input {
+    font-size: 0.84rem;
+  }
+
+  .btn-create-room {
+    height: 40px;
+    padding: 0 14px;
+    font-size: 0.82rem;
+    gap: 5px;
+  }
+
+  .rooms-discovery-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .room-discovery-card {
+    padding: 14px !important;
+    border-radius: 12px !important;
+    gap: 10px !important;
+  }
+
+  .room-card-title {
+    font-size: 0.96rem !important;
+  }
+
+  .room-card-desc {
+    font-size: 0.82rem !important;
+    margin: 2px 0 4px !important;
+    line-height: 1.4 !important;
+  }
+
+  .room-card-actions {
+    gap: 8px !important;
+  }
+
+  .room-card-actions button {
+    padding: 8px 12px !important;
+    font-size: 0.82rem !important;
+  }
+
+  .announcements-under-construction {
+    margin: 24px auto !important;
+    padding: 28px 16px !important;
+    border-radius: 16px !important;
+  }
+
+  .construction-icon-wrapper {
+    width: 62px !important;
+    height: 62px !important;
+    margin-bottom: 14px !important;
+  }
+
+  .construction-title {
+    font-size: 1.18rem !important;
+  }
+
+  .construction-text {
+    font-size: 0.82rem !important;
+    margin-bottom: 18px !important;
+  }
+}
+
+@media (max-width: 440px) {
+  .btn-create-room span {
+    display: none;
+  }
+  .btn-create-room {
+    padding: 0;
+    width: 40px;
+    min-width: 40px;
+    border-radius: var(--radius-md);
+  }
 }

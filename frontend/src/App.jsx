@@ -4133,23 +4133,23 @@ export default function App() {
             ) : (
               <div className="rooms-discovery-section">
                 <div className="rooms-discovery-toolbar">
-                  <div className="explore-search-bar" style={{ flex: 1, marginBottom: 0 }}>
-                    <Search size={18} color="var(--text-dim)" />
+                  <div className="rooms-search-box">
+                    <Search size={17} color="var(--text-dim)" className="rooms-search-icon" />
                     <input
                       type="text"
-                      placeholder="Search rooms by title, description or slug..."
+                      placeholder="Search rooms..."
                       value={roomsFilterQuery}
                       onChange={e => setRoomsFilterQuery(e.target.value)}
-                      className="chat-input"
+                      className="rooms-search-input"
                     />
                   </div>
                   <button
                     type="button"
-                    className="btn-primary"
-                    style={{ padding: "10px 16px", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    className="btn-primary btn-create-room"
                     onClick={() => { pushNavState("create_room"); setIsCreateRoomOpen(true); }}
                   >
-                    <Plus size={16} /> Create Room
+                    <Plus size={16} />
+                    <span>Create Room</span>
                   </button>
                 </div>
 
