@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean, UniqueConstraint
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean, UniqueConstraint, Integer
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -212,4 +212,69 @@ class MateMessage(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     conversation = relationship("MateConversation", back_populates="messages")
+
+
+# ─────────────────────────────────────────────────────────────────
+# ADMIN PANEL, FEEDBACK & SITE MAINTENANCE MODELS
+# ─────────────────────────────────────────────────────────────────
+class AdminAccount(Base):
+    """
+    Stores administrators for the /admin portal.
+    is_prime=True indicates the Prime Admin (e.g. 'sandeep') who can add/remove other admins.
+    Admins can authenticate via username + password OR via Google OAuth (matched by email or username).
+    """
+    __tablename__ = "admin_accounts"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=True)
+    name = Column(String(100), nullable=True)
+    password_hash = Column(String(255), nullable=True)
+    is_prime = Column(Boolean, default=False)
+    added_by = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Feedback(Base):
+    """
+    User-submitted feedback from the floating button in the Announcements page.
+    """
+    __tablename__ = "feedbacks"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_name = Column(String(100), nullable=True)
+    user_username = Column(String(50), nullable=True)
+    user_avatar = Column(String(500), nullable=True)
+    rating = Column(Integer, nullable=False)  # 1 to 5 stars
+    comment = Column(Text, nullable=False)
+    is_resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SiteUpdateLog(Base):
+    """
+    Tracks website updates, changelog items, and deployments for the Admin Panel.
+    """
+    __tablename__ = "site_update_logs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    version = Column(String(50), nullable=True)
+    title = Column(String(200), nullable=False)
+    category = Column(String(50), default="Feature")  # Feature, UI/UX, Bug Fix, Security, Backend
+    description = Column(Text, nullable=False)
+    author_username = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SiteSetting(Base):
+    """
+    Key-value store for global platform settings (e.g., maintenance_mode, maintenance_message).
+    """
+    __tablename__ = "site_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 

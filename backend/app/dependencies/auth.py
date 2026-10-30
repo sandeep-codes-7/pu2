@@ -21,7 +21,7 @@ async def get_current_user(
         raise credentials_exception
 
     payload = decode_access_token(token)
-    if payload is None:
+    if payload is None or payload.get("role") == "admin":
         raise credentials_exception
     
     user_id: str = payload.get("sub")
@@ -40,7 +40,7 @@ async def get_user_from_token_string(token: str, db: AsyncSession) -> User | Non
     if not token:
         return None
     payload = decode_access_token(token)
-    if not payload:
+    if not payload or payload.get("role") == "admin":
         return None
     user_id = payload.get("sub")
     if not user_id:
@@ -56,7 +56,7 @@ async def get_current_user_optional(
     if not token:
         return None
     payload = decode_access_token(token)
-    if not payload:
+    if not payload or payload.get("role") == "admin":
         return None
     user_id = payload.get("sub")
     if not user_id:

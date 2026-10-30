@@ -38,6 +38,34 @@ ROOM_IMG_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def _detect_image_extension(data: bytes) -> Optional[str]:
+    """Validates image file magic bytes (JPEG, PNG, GIF, WebP) and returns canonical extension."""
+    if not data or len(data) < 12:
+        return None
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def _is_safe_image_url(url_val: str) -> bool:
+    """Ensures avatar/room picture URLs only use safe schemes (https://, http://, or local /api/uploads/)."""
+    val = (url_val or "").strip()
+    if not val:
+        return True
+    if val.startswith("/api/uploads/"):
+        return ".." not in val and "\\" not in val
+    if val.startswith(("https://", "http://")):
+        return len(val) <= 500
+    return False
 
 
 def _moderator_out(mod: RoomModerator) -> ModeratorOut:
@@ -174,9 +202,15 @@ async def upload_avatar(
     if len(contents) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 5 MB")
 
-    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
+    ext = _detect_image_extension(contents)
+    if not ext:
+        raise HTTPException(status_code=400, detail="Invalid or corrupted image file")
+
     filename = f"{current_user.id}.{ext}"
-    dest = AVATAR_DIR / filename
+    dest = (AVATAR_DIR / filename).resolve()
+    if not str(dest).startswith(str(AVATAR_DIR.resolve())):
+        raise HTTPException(status_code=400, detail="Invalid file destination")
+
     with open(dest, "wb") as f:
         f.write(contents)
 
@@ -211,9 +245,15 @@ async def upload_room_picture(
     if len(contents) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 5 MB")
 
-    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
+    ext = _detect_image_extension(contents)
+    if not ext:
+        raise HTTPException(status_code=400, detail="Invalid or corrupted image file")
+
     filename = f"{room.id}.{ext}"
-    dest = ROOM_IMG_DIR / filename
+    dest = (ROOM_IMG_DIR / filename).resolve()
+    if not str(dest).startswith(str(ROOM_IMG_DIR.resolve())):
+        raise HTTPException(status_code=400, detail="Invalid file destination")
+
     with open(dest, "wb") as f:
         f.write(contents)
 
@@ -228,18 +268,24 @@ async def upload_room_picture(
 # ─────────────────────────────────────────────────────────────────
 @router.get("/uploads/avatars/{filename}")
 async def serve_avatar(filename: str):
-    path = AVATAR_DIR / filename
-    if not path.exists():
+    if not SAFE_FILENAME_RE.match(filename) or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    base_dir = AVATAR_DIR.resolve()
+    path = (AVATAR_DIR / filename).resolve()
+    if not str(path).startswith(str(base_dir)) or not path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(str(path))
+    return FileResponse(str(path), headers={"X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/uploads/rooms/{filename}")
 async def serve_room_image(filename: str):
-    path = ROOM_IMG_DIR / filename
-    if not path.exists():
+    if not SAFE_FILENAME_RE.match(filename) or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    base_dir = ROOM_IMG_DIR.resolve()
+    path = (ROOM_IMG_DIR / filename).resolve()
+    if not str(path).startswith(str(base_dir)) or not path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(str(path))
+    return FileResponse(str(path), headers={"X-Content-Type-Options": "nosniff"})
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -353,11 +399,13 @@ async def update_room(
         raise HTTPException(status_code=403, detail="Only moderators can edit this room")
 
     if payload.title is not None:
-        room.title = payload.title.strip()
+        room.title = payload.title.strip()[:150]
     if payload.description is not None:
-        room.description = payload.description.strip()
+        room.description = payload.description.strip()[:1000]
     if payload.picture is not None:
-        room.picture = payload.picture
+        if not _is_safe_image_url(payload.picture):
+            raise HTTPException(status_code=400, detail="Invalid room picture URL")
+        room.picture = payload.picture.strip()
     if payload.is_private is not None:
         room.is_private = bool(payload.is_private)
         if room.is_private and not room.invite_code:
@@ -704,11 +752,24 @@ async def clear_room_messages(
 
 
 @router.get("/rooms/{slug}/participants", response_model=List[UserOut])
-async def get_room_participants(slug: str, db: AsyncSession = Depends(get_db)):
+async def get_room_participants(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
     """Returns active participants for a room (room members, moderators, creator)."""
     room = await _get_room_with_moderators(db, slug)
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
+
+    if room.is_private:
+        if not current_user:
+            raise HTTPException(status_code=403, detail="Only room members can view participants of a private room")
+        is_creator = (room.creator_id == current_user.id)
+        is_mod = await _is_moderator(db, room.id, current_user.id)
+        res_mem = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == current_user.id))
+        if not (is_creator or is_mod or res_mem.scalars().first()):
+            raise HTTPException(status_code=403, detail="Only room members can view participants of a private room")
 
     participant_ids = set()
 
@@ -1149,15 +1210,17 @@ async def update_my_profile(
         current_user.username = clean_u
 
     if payload.name:
-        current_user.name = payload.name.strip()
+        current_user.name = payload.name.strip()[:80]
     if payload.avatar is not None:
+        if not _is_safe_image_url(payload.avatar):
+            raise HTTPException(status_code=400, detail="Invalid avatar URL")
         current_user.avatar = payload.avatar.strip()
     if payload.gender:
-        current_user.gender = payload.gender
+        current_user.gender = payload.gender.strip()[:30]
     if payload.bio is not None:
-        current_user.bio = payload.bio.strip()
+        current_user.bio = payload.bio.strip()[:500]
     if payload.interests is not None:
-        current_user.interests = payload.interests.strip()
+        current_user.interests = payload.interests.strip()[:300]
 
     await db.commit()
     await db.refresh(current_user)
@@ -1375,7 +1438,7 @@ async def get_notifications(
 @router.get("/rooms/{slug}/messages", response_model=List[MessageOut])
 async def get_room_messages(
     slug: str,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
@@ -1425,7 +1488,7 @@ async def get_room_messages(
 @router.get("/direct/{recipient_id}/messages", response_model=List[MessageOut])
 async def get_direct_messages(
     recipient_id: str,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

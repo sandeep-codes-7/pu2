@@ -80,7 +80,7 @@ async def google_auth(payload: GoogleAuthRequest, db: AsyncSession = Depends(get
             await db.commit()
             await db.refresh(user)
 
-    token = create_access_token({"sub": user.id, "email": user.email})
+    token = create_access_token({"sub": user.id, "role": "user", "email": user.email})
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -89,39 +89,35 @@ async def google_auth(payload: GoogleAuthRequest, db: AsyncSession = Depends(get
 
 @router.post("/demo-login", response_model=Token)
 async def demo_login(payload: DemoLoginRequest, db: AsyncSession = Depends(get_db)):
-    """Instant Pass login allows temporary access for testing."""
+    """Instant Pass login allows temporary access for testing. Each call creates an isolated guest session."""
     clean_username = re.sub(r"[^a-zA-Z0-9_]", "", payload.username.lower())
     if len(clean_username) < 3:
         raise HTTPException(status_code=400, detail="Username must be at least 3 characters alphanumeric/underscore")
 
-    # Check if user with clean_username already exists
+    # Check if user with clean_username already exists; never reuse an existing account without credentials
     res_existing = await db.execute(select(User).filter(User.username == clean_username))
     existing_user = res_existing.scalars().first()
+    if existing_user:
+        clean_username = f"{clean_username[:10]}_{str(uuid.uuid4())[:4]}"
 
-    if existing_user and existing_user.provider == "demo":
-        user = existing_user
-    else:
-        if existing_user:
-            clean_username = f"{clean_username[:10]}_{str(uuid.uuid4())[:4]}"
+    email = f"{clean_username}_{str(uuid.uuid4())[:8]}@guest.pairup"
+    name = (payload.name.strip()[:80] if payload.name and payload.name.strip() else clean_username.title())
+    gender = (payload.gender.strip()[:30] if payload.gender and payload.gender.strip() else "Prefer not to say")
 
-        email = f"{clean_username}_{str(uuid.uuid4())[:8]}@guest.pairup"
-        name = payload.name or clean_username.title()
-        gender = payload.gender or "Prefer not to say"
+    avatar = f"https://api.dicebear.com/7.x/bottts/svg?seed={clean_username}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf"
+    user = User(
+        email=email,
+        name=name,
+        username=clean_username,
+        avatar=avatar,
+        gender=gender,
+        provider="demo"
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
 
-        avatar = f"https://api.dicebear.com/7.x/bottts/svg?seed={clean_username}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf"
-        user = User(
-            email=email,
-            name=name,
-            username=clean_username,
-            avatar=avatar,
-            gender=gender,
-            provider="demo"
-        )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-    token = create_access_token({"sub": user.id, "email": user.email})
+    token = create_access_token({"sub": user.id, "role": "user", "email": user.email})
     return {
         "access_token": token,
         "token_type": "bearer",

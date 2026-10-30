@@ -10,7 +10,7 @@ if current_dir.name == "app":
         sys.path.insert(0, str(backend_root))
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.future import select
 import uvicorn
@@ -18,12 +18,13 @@ import datetime
 
 from app.config import settings
 from app.database import init_db, AsyncSessionLocal
-from app.models.entities import User, Room, Message
+from app.models.entities import User, Room, Message, RoomModerator, RoomMember
 from app.routers import auth as auth_router
 from app.routers import chat as chat_router
 from app.routers import mate as mate_router
+from app.routers import admin as admin_router
 from app.utils.hub import hub
-from app.dependencies.auth import get_user_from_token_string
+from app.dependencies.auth import get_user_from_token_string, get_current_user
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,26 +32,59 @@ async def lifespan(app: FastAPI):
     await init_db()
     yield
 
+is_prod = os.getenv("ENV", "development").lower() == "production"
+
 app = FastAPI(
     title="PairUP API",
     description="Production-grade real-time chat with Google OAuth2, rooms, and 1-on-1 direct messaging",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url=None if is_prod else "/docs",
+    redoc_url=None if is_prod else "/redoc",
+    openapi_url=None if is_prod else "/openapi.json"
 )
 
-# Robust CORS Configuration
+# Strict CORS Origins Configuration
+_allowed_origins = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "https://pairup.cc",
+    "https://www.pairup.cc",
+}
+if settings.FRONTEND_URL:
+    for origin in settings.FRONTEND_URL.split(","):
+        if origin.strip():
+            _allowed_origins.add(origin.strip().rstrip("/"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allows local dev with vite (e.g. 5173, 5174, 3000)
+    allow_origins=list(_allowed_origins),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
+
 
 # Include Routers
 app.include_router(auth_router.router)
 app.include_router(chat_router.router)
 app.include_router(mate_router.router)
+app.include_router(admin_router.router)
 
 @app.get("/health")
 def health():
@@ -61,8 +95,8 @@ def health():
     }
 
 @app.get("/api/presence")
-def get_presence():
-    """Returns currently online user IDs."""
+def get_presence(_current_user: User = Depends(get_current_user)):
+    """Returns currently online user IDs (authenticated users only)."""
     return {"online_user_ids": list(hub.get_online_user_ids())}
 
 # Real-time WebSocket Gateway
@@ -109,7 +143,27 @@ async def websocket_gateway(
             if action == "join_room":
                 room_slug = payload.get("room_slug")
                 if room_slug:
-                    slug = room_slug.lower()
+                    slug = str(room_slug).lower().strip()
+                    async with AsyncSessionLocal() as db:
+                        res_r = await db.execute(select(Room).filter(Room.slug == slug))
+                        target_room = res_r.scalars().first()
+                        if not target_room:
+                            continue
+                        is_creator = (target_room.creator_id == user_info["id"])
+                        res_mod = await db.execute(
+                            select(RoomModerator).filter(
+                                RoomModerator.room_id == target_room.id,
+                                RoomModerator.user_id == user_info["id"]
+                            )
+                        )
+                        res_mem = await db.execute(
+                            select(RoomMember).filter(
+                                RoomMember.room_id == target_room.id,
+                                RoomMember.user_id == user_info["id"]
+                            )
+                        )
+                        if not (is_creator or res_mod.scalars().first() or res_mem.scalars().first()):
+                            continue
                     if current_room_slug and current_room_slug != slug:
                         hub.leave_room(websocket, current_room_slug)
                     current_room_slug = slug
@@ -124,10 +178,11 @@ async def websocket_gateway(
                 room_slug = payload.get("room_slug")
                 content = (payload.get("content") or "").strip()
                 if room_slug and content and len(content) <= 5000:
-                    slug = room_slug.lower()
+                    slug = str(room_slug).lower().strip()
                     try:
-                        # Persist message to DB
+                        # Persist message to DB and collect authorized participant IDs
                         msg_id = None
+                        participant_user_ids = set()
                         created_at_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
                         async with AsyncSessionLocal() as db:
                             res = await db.execute(select(Room).filter(Room.slug == slug))
@@ -139,7 +194,6 @@ async def websocket_gateway(
                                 })
                                 continue
 
-                            from app.models.entities import RoomModerator, RoomMember
                             is_creator = (room.creator_id == user_info["id"])
                             res_mod = await db.execute(select(RoomModerator).filter(RoomModerator.room_id == room.id, RoomModerator.user_id == user_info["id"]))
                             res_mem = await db.execute(select(RoomMember).filter(RoomMember.room_id == room.id, RoomMember.user_id == user_info["id"]))
@@ -151,6 +205,18 @@ async def websocket_gateway(
                                 })
                                 continue
 
+                            # Gather all authorized room participants so messages are NEVER leaked to non-members
+                            if room.creator_id:
+                                participant_user_ids.add(room.creator_id)
+                            all_mods = await db.execute(select(RoomModerator.user_id).filter(RoomModerator.room_id == room.id))
+                            for (m_uid,) in all_mods.all():
+                                if m_uid:
+                                    participant_user_ids.add(m_uid)
+                            all_mems = await db.execute(select(RoomMember.user_id).filter(RoomMember.room_id == room.id))
+                            for (mem_uid,) in all_mems.all():
+                                if mem_uid:
+                                    participant_user_ids.add(mem_uid)
+
                             db_msg = Message(
                                 sender_id=user_info["id"],
                                 room_id=room.id,
@@ -161,7 +227,7 @@ async def websocket_gateway(
                             await db.refresh(db_msg)
                             msg_id = db_msg.id
 
-                        # Broadcast to everyone in the room
+                        # Deliver strictly to authorized room participants
                         msg_data = {
                             "type": "room_message",
                             "id": msg_id,
@@ -174,13 +240,14 @@ async def websocket_gateway(
                             "sender_avatar": user_info["avatar"],
                             "created_at": created_at_iso
                         }
-                        await hub.broadcast_global(msg_data)
+                        for uid in participant_user_ids:
+                            await hub.send_to_user(uid, msg_data)
                     except Exception as e:
                         import logging
                         logging.getLogger("uvicorn.error").exception(f"Error sending room message in #{slug}: {e}")
                         await websocket.send_json({
                             "type": "error",
-                            "message": f"Failed to send message: {str(e)}"
+                            "message": "Failed to send message. Please try again."
                         })
 
             elif action == "send_direct_message":

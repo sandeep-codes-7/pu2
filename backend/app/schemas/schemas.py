@@ -255,3 +255,99 @@ class MateTrendOut(BaseModel):
     count: int
     rank: Optional[int] = None
 
+
+# ─────────────────────────────────────────────────────────────────
+# FEEDBACK & ADMIN PANEL SCHEMAS
+# ─────────────────────────────────────────────────────────────────
+class FeedbackCreate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    comment: str = Field(..., min_length=1, max_length=3000)
+
+
+class FeedbackOut(BaseModel):
+    id: str
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    user_username: Optional[str] = None
+    user_avatar: Optional[str] = None
+    rating: int
+    comment: str
+    is_resolved: bool = False
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AdminGoogleLoginRequest(BaseModel):
+    credential: Optional[str] = None
+    code: Optional[str] = None
+
+
+class AdminOut(BaseModel):
+    id: str
+    username: str
+    email: Optional[str] = None
+    name: Optional[str] = None
+    is_prime: bool = False
+    added_by: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AdminToken(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    admin: AdminOut
+
+
+class AdminCreateRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=50)
+    password: Optional[str] = None
+    email: Optional[str] = None
+    name: Optional[str] = None
+
+
+class AdminUpdateSelfRequest(BaseModel):
+    email: Optional[str] = None
+    password: Optional[str] = None
+    name: Optional[str] = None
+
+
+class SiteUpdateCreate(BaseModel):
+    version: Optional[str] = "v2.5"
+    title: str = Field(..., min_length=1, max_length=200)
+    category: Optional[str] = "Feature"
+    description: str = Field(..., min_length=1, max_length=5000)
+
+
+class SiteUpdateOut(BaseModel):
+    id: str
+    version: Optional[str] = None
+    title: str
+    category: str
+    description: str
+    author_username: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MaintenanceUpdateRequest(BaseModel):
+    maintenance_mode: bool
+    maintenance_message: Optional[str] = None
+
+
+class MaintenanceStatusOut(BaseModel):
+    maintenance_mode: bool
+    maintenance_message: str
+
+

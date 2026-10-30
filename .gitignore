@@ -1,4 +1,13 @@
 .venv/
-venv//
+venv/
 .env
+backend/.env
+frontend/.env
+*.db
+*.sqlite
+*.sqlite3
+backend/uploads/
+__pycache__/
+node_modules/
+frontend/dist/
 TO-DO

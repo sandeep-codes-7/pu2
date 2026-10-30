@@ -8,7 +8,8 @@ import {
   Upload, Image, ChevronDown, Crown, UserMinus, User as UserIcon,
   Heart, AlertCircle, CheckCircle2, Loader2, Flame,
   PanelLeftClose, PanelLeftOpen, ArrowLeft, Info, Sun, Moon,
-  Bell, Lock, Globe, Copy, Share2, MoreVertical, Eraser, Construction, LogIn
+  Bell, Lock, Globe, Copy, Share2, MoreVertical, Eraser, Construction, LogIn,
+  Star, MessageSquarePlus
 } from 'lucide-react';
 
 const API_BASE = window.location.origin.includes(":5173")
@@ -213,6 +214,16 @@ export default function App() {
   const [mateTrends, setMateTrends] = useState([]);
   const [isLoadingTrends, setIsLoadingTrends] = useState(false);
 
+  // Feedbacks Floating Button & Modal
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState(5);
+  const [feedbackHoverRating, setFeedbackHoverRating] = useState(0);
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+
+  // System Maintenance Status
+  const [maintenanceState, setMaintenanceState] = useState({ active: false, message: "" });
+
   const pushNavState = useCallback((type) => {
     try {
       window.history.pushState({ puApp: true, type, ts: Date.now() }, "");
@@ -244,7 +255,8 @@ export default function App() {
     isCreateRoomOpen,
     showLandingPage,
     isEditingProfile,
-    mobileTab
+    mobileTab,
+    isFeedbackModalOpen
   });
 
   useEffect(() => {
@@ -258,9 +270,10 @@ export default function App() {
       isCreateRoomOpen,
       showLandingPage,
       isEditingProfile,
-      mobileTab
+      mobileTab,
+      isFeedbackModalOpen
     };
-  }, [viewMode, activeTab, viewingProfileId, roomSettingsOpen, viewingRoomInfo, currentUser, isCreateRoomOpen, showLandingPage, isEditingProfile, mobileTab]);
+  }, [viewMode, activeTab, viewingProfileId, roomSettingsOpen, viewingRoomInfo, currentUser, isCreateRoomOpen, showLandingPage, isEditingProfile, mobileTab, isFeedbackModalOpen]);
 
   // Robust System & Hardware Back Button Handler
   useEffect(() => {
@@ -268,6 +281,10 @@ export default function App() {
       const state = activeChatStateRef.current;
       if (notificationsOpenRef.current) {
         setNotificationsOpenMode(null);
+        return;
+      }
+      if (state.isFeedbackModalOpen) {
+        setIsFeedbackModalOpen(false);
         return;
       }
       if (state.isEditingProfile) {
@@ -341,6 +358,18 @@ export default function App() {
     fetch(`${API_BASE}/api/auth/config`)
       .then(r => r.json())
       .then(d => setGoogleClientId(d.google_client_id))
+      .catch(() => { });
+
+    fetch(`${API_BASE}/api/system/status`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d) {
+          setMaintenanceState({
+            active: Boolean(d.maintenance_mode),
+            message: d.maintenance_message || ""
+          });
+        }
+      })
       .catch(() => { });
   }, []);
 
@@ -776,6 +805,11 @@ export default function App() {
           }
         } else if (data.type === "error") {
           callbacksRef.current.showSnackbar?.(data.message, "error");
+        } else if (data.type === "maintenance_status") {
+          setMaintenanceState({
+            active: Boolean(data.maintenance_mode),
+            message: data.maintenance_message || ""
+          });
         } else if (data.type === "typing_status") {
           if (data.is_typing) {
             setTypingUsers(prev => ({ ...prev, [data.user_id]: data.name }));
@@ -1866,13 +1900,72 @@ export default function App() {
     return "gender-badge neutral";
   };
 
-  const avatarSrc = (user) =>
-    user?.avatar
-      ? (user.avatar.startsWith("/api/") ? `${API_BASE}${user.avatar}` : user.avatar)
-      : `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${user?.username || "user"}`;
+  const avatarSrc = (user) => {
+    const raw = (user?.avatar || "").trim();
+    if (raw) {
+      if (raw.startsWith("/api/uploads/")) return `${API_BASE}${raw}`;
+      if (raw.startsWith("https://") || raw.startsWith("http://")) return raw;
+    }
+    return `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(user?.username || "user")}`;
+  };
 
   const activeRoom = rooms.find(r => r.slug === activeTab.id) || activeTab.data;
   const activeDirectUser = directConversations.find(u => u.id === activeTab.id) || activeTab.data;
+
+  const handleSubmitFeedback = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!feedbackRating || feedbackRating < 1 || feedbackRating > 5) {
+      showSnackbar("Please select a star rating (1 to 5).", "error");
+      return;
+    }
+    setIsSubmittingFeedback(true);
+    try {
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/api/feedback`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          rating: feedbackRating,
+          comment: feedbackComment.trim()
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to submit feedback");
+      showSnackbar("Thank you for your feedback! ✨", "success");
+      setIsFeedbackModalOpen(false);
+      setFeedbackComment("");
+      setFeedbackRating(5);
+      setFeedbackHoverRating(0);
+    } catch (err) {
+      showSnackbar(err.message || "Error submitting feedback", "error");
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // MAINTENANCE OVERLAY
+  // ══════════════════════════════════════════════════════════════
+  if (maintenanceState.active) {
+    return (
+      <div className="maintenance-screen">
+        <div className="maintenance-card">
+          <div className="maintenance-icon-ring">
+            <Construction size={38} />
+          </div>
+          <h1 className="maintenance-title">Scheduled Maintenance</h1>
+          <p className="maintenance-desc">
+            {maintenanceState.message || "PairUP is currently undergoing scheduled maintenance. Please check back shortly!"}
+          </p>
+          <div className="maintenance-status-pill">
+            <span className="maintenance-pulse-dot" />
+            <span>Upgrading systems — back online soon</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ══════════════════════════════════════════════════════════════
   // LANDING PAGE & AUTHENTICATION
@@ -4236,6 +4329,22 @@ export default function App() {
               </div>
             )}
           </div>
+
+          {/* Floating Feedbacks Button (Bottom-Right Corner) */}
+          <button
+            type="button"
+            className="floating-feedback-btn"
+            onClick={() => {
+              pushNavState("feedback_modal");
+              setIsFeedbackModalOpen(true);
+            }}
+            title="Share your feedback"
+            aria-label="Feedbacks"
+          >
+            <Star size={17} className="feedback-fab-star" />
+            <span>Feedbacks</span>
+          </button>
+
           {renderMobileBottomNav()}
         </main>
       ) : (
@@ -4648,6 +4757,116 @@ export default function App() {
                 No
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feedbacks Modal (5-Star Rating + Tell us what you think) */}
+      {isFeedbackModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsFeedbackModalOpen(false)}>
+          <div className="modal-card feedback-modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div className="feedback-modal-icon-badge">
+                  <Star size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.08rem", fontWeight: 700 }}>Share Your Feedback</h3>
+                  <p style={{ margin: "2px 0 0", fontSize: "0.76rem", color: "var(--text-dim)" }}>
+                    Help us make PairUP even better for everyone
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={() => setIsFeedbackModalOpen(false)}
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitFeedback} className="feedback-modal-form">
+              <div className="feedback-stars-section">
+                <label className="feedback-field-label">Rate your experience</label>
+                <div
+                  className="feedback-stars-picker"
+                  onMouseLeave={() => setFeedbackHoverRating(0)}
+                >
+                  {[1, 2, 3, 4, 5].map(starVal => {
+                    const activeRating = feedbackHoverRating || feedbackRating;
+                    const isFilled = starVal <= activeRating;
+                    return (
+                      <button
+                        key={starVal}
+                        type="button"
+                        className={`feedback-star-btn ${isFilled ? "filled" : ""}`}
+                        onMouseEnter={() => setFeedbackHoverRating(starVal)}
+                        onClick={() => setFeedbackRating(starVal)}
+                        aria-label={`Rate ${starVal} out of 5 stars`}
+                      >
+                        <Star
+                          size={30}
+                          fill={isFilled ? "#f59e0b" : "transparent"}
+                          stroke={isFilled ? "#f59e0b" : "currentColor"}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+                <span className="feedback-rating-caption">
+                  {(feedbackHoverRating || feedbackRating) === 5 && "Excellent! Love it ⭐"}
+                  {(feedbackHoverRating || feedbackRating) === 4 && "Great experience 👍"}
+                  {(feedbackHoverRating || feedbackRating) === 3 && "Good, could be better 🙂"}
+                  {(feedbackHoverRating || feedbackRating) === 2 && "Needs improvement 🛠️"}
+                  {(feedbackHoverRating || feedbackRating) === 1 && "Poor experience 😔"}
+                </span>
+              </div>
+
+              <div className="feedback-comment-section">
+                <label className="feedback-field-label" htmlFor="feedback-comment-input">
+                  Tell us what you think
+                </label>
+                <textarea
+                  id="feedback-comment-input"
+                  rows={4}
+                  placeholder="Tell us what you think about PairUP, features you'd love to see, or any issues you noticed..."
+                  value={feedbackComment}
+                  onChange={e => setFeedbackComment(e.target.value)}
+                  className="chat-input feedback-textarea"
+                  maxLength={2000}
+                  required
+                />
+              </div>
+
+              <div className="feedback-modal-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setIsFeedbackModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary feedback-submit-btn"
+                  disabled={isSubmittingFeedback}
+                >
+                  {isSubmittingFeedback ? (
+                    <>
+                      <Loader2 size={16} className="mate-spin-icon" />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send size={15} />
+                      <span>Submit Feedback</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
