@@ -2568,7 +2568,8 @@ export default function App() {
                     <div>
                       <h4 style={{ fontSize: "1.2rem", fontWeight: 700, color: "var(--text-main)" }}>{profileData.user.name}</h4>
                       <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginBottom: "6px" }}>@{profileData.user.username}</div>
-                      <span className={getGenderBadgeClass(profileData.user.gender)}>{profileData.user.gender || "Prefer not to say"}</span>
+                      <span style={{ marginBottom: "6px" }} className={getGenderBadgeClass(profileData.user.gender)}>{profileData.user.gender || "Prefer not to say"}</span>
+                      <p style={{ fontSize: "0.82rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginBottom: "6px" }}>Bio: {profileData.user.bio}</p>
                     </div>
                   </div>
 
@@ -2753,7 +2754,7 @@ export default function App() {
                                 >
                                   <MessageSquare size={13} /> Chat
                                 </button>
-                                {viewingProfileId === currentUser.id && (
+                                {/* {viewingProfileId === currentUser.id && (
                                   <button
                                     type="button"
                                     className="btn-danger"
@@ -2763,7 +2764,7 @@ export default function App() {
                                   >
                                     <UserMinus size={13} /> Remove
                                   </button>
-                                )}
+                                )} */}
                               </div>
                             </div>
                           ))}
