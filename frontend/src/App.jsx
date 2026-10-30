@@ -221,6 +221,12 @@ export default function App() {
   const [feedbackComment, setFeedbackComment] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
+  // New Chat with Friend Modal (Mobile FAB + Direct Messages Quick Action)
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [friendsForNewChat, setFriendsForNewChat] = useState([]);
+  const [newChatSearch, setNewChatSearch] = useState("");
+  const [isLoadingFriendsForChat, setIsLoadingFriendsForChat] = useState(false);
+
   // System Maintenance Status
   const [maintenanceState, setMaintenanceState] = useState({ active: false, message: "" });
 
@@ -256,7 +262,8 @@ export default function App() {
     showLandingPage,
     isEditingProfile,
     mobileTab,
-    isFeedbackModalOpen
+    isFeedbackModalOpen,
+    isNewChatModalOpen
   });
 
   useEffect(() => {
@@ -271,9 +278,10 @@ export default function App() {
       showLandingPage,
       isEditingProfile,
       mobileTab,
-      isFeedbackModalOpen
+      isFeedbackModalOpen,
+      isNewChatModalOpen
     };
-  }, [viewMode, activeTab, viewingProfileId, roomSettingsOpen, viewingRoomInfo, currentUser, isCreateRoomOpen, showLandingPage, isEditingProfile, mobileTab, isFeedbackModalOpen]);
+  }, [viewMode, activeTab, viewingProfileId, roomSettingsOpen, viewingRoomInfo, currentUser, isCreateRoomOpen, showLandingPage, isEditingProfile, mobileTab, isFeedbackModalOpen, isNewChatModalOpen]);
 
   // Robust System & Hardware Back Button Handler
   useEffect(() => {
@@ -281,6 +289,10 @@ export default function App() {
       const state = activeChatStateRef.current;
       if (notificationsOpenRef.current) {
         setNotificationsOpenMode(null);
+        return;
+      }
+      if (state.isNewChatModalOpen) {
+        setIsNewChatModalOpen(false);
         return;
       }
       if (state.isFeedbackModalOpen) {
@@ -687,8 +699,14 @@ export default function App() {
           setRooms(prev => {
             const roomSlug = data.room_slug?.toLowerCase();
             const idx = prev.findIndex(r => r.slug.toLowerCase() === roomSlug);
-            if (idx <= 0) return prev;
-            const target = prev[idx];
+            if (idx < 0) return prev;
+            const target = {
+              ...prev[idx],
+              last_message: data.content,
+              last_message_at: data.created_at || new Date().toISOString(),
+              last_message_sender_name: data.sender_name,
+              last_message_sender_id: data.sender_id
+            };
             return [target, ...prev.filter((_, i) => i !== idx)];
           });
           const state = activeChatStateRef.current;
@@ -720,8 +738,13 @@ export default function App() {
           const partnerId = data.sender_id === state.currentUserId ? data.recipient_id : data.sender_id;
           setDirectConversations(prev => {
             const idx = prev.findIndex(u => u.id === partnerId);
-            if (idx <= 0) return prev;
-            const target = prev[idx];
+            if (idx < 0) return prev;
+            const target = {
+              ...prev[idx],
+              last_message: data.content,
+              last_message_at: data.created_at || new Date().toISOString(),
+              last_message_sender_id: data.sender_id
+            };
             return [target, ...prev.filter((_, i) => i !== idx)];
           });
           callbacksRef.current.refreshDirectConversations?.();
@@ -944,6 +967,22 @@ export default function App() {
     return `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${timeStr}`;
   };
 
+  const formatTileTimestamp = (dateInput) => {
+    const d = parseSafeDate(dateInput);
+    if (!d) return "";
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    if (isToday) {
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) {
+      return "Yesterday";
+    }
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
+
   const isCurrentUserModerator = (room) =>
     room?.moderators?.some(m => m.user_id === currentUser?.id);
 
@@ -1077,20 +1116,43 @@ export default function App() {
 
     if (activeTab.type === "room") {
       wsRef.current.send(JSON.stringify({ action: "send_room_message", room_slug: activeTab.id, content }));
+      const nowIso = new Date().toISOString();
       setRooms(prev => {
         const roomSlug = activeTab.id?.toLowerCase();
         const idx = prev.findIndex(r => r.slug.toLowerCase() === roomSlug);
-        if (idx <= 0) return prev;
-        const target = prev[idx];
+        if (idx < 0) return prev;
+        const target = {
+          ...prev[idx],
+          last_message: content,
+          last_message_at: nowIso,
+          last_message_sender_name: currentUser?.name,
+          last_message_sender_id: currentUser?.id
+        };
         return [target, ...prev.filter((_, i) => i !== idx)];
       });
     } else {
       wsRef.current.send(JSON.stringify({ action: "send_direct_message", recipient_id: activeTab.id, content }));
+      const nowIso = new Date().toISOString();
       setDirectConversations(prev => {
         const partnerId = activeTab.id;
         const idx = prev.findIndex(u => u.id === partnerId);
-        if (idx <= 0) return prev;
-        const target = prev[idx];
+        if (idx < 0) {
+          if (activeTab.data && activeTab.data.id === partnerId) {
+            return [{
+              ...activeTab.data,
+              last_message: content,
+              last_message_at: nowIso,
+              last_message_sender_id: currentUser?.id
+            }, ...prev];
+          }
+          return prev;
+        }
+        const target = {
+          ...prev[idx],
+          last_message: content,
+          last_message_at: nowIso,
+          last_message_sender_id: currentUser?.id
+        };
         return [target, ...prev.filter((_, i) => i !== idx)];
       });
     }
@@ -1812,6 +1874,13 @@ export default function App() {
         if (res.ok) {
           setMessages([]);
           setChatMenuOpen(false);
+          setDirectConversations(prev => prev.map(u => u.id === activeDirectUser.id ? {
+            ...u,
+            last_message: null,
+            last_message_at: null,
+            last_message_sender_id: null
+          } : u));
+          refreshDirectConversations();
           showSnackbar("Chat history cleared");
         } else {
           alert("Failed to clear chat");
@@ -1833,6 +1902,13 @@ export default function App() {
         if (res.ok) {
           setMessages([]);
           setChatMenuOpen(false);
+          setRooms(prev => prev.map(r => r.slug === activeRoom.slug ? {
+            ...r,
+            last_message: null,
+            last_message_at: null,
+            last_message_sender_name: null,
+            last_message_sender_id: null
+          } : r));
           showSnackbar("Room chat history cleared");
         } else {
           alert("Failed to clear room chat");
@@ -1911,6 +1987,25 @@ export default function App() {
 
   const activeRoom = rooms.find(r => r.slug === activeTab.id) || activeTab.data;
   const activeDirectUser = directConversations.find(u => u.id === activeTab.id) || activeTab.data;
+
+  const openNewChatModal = async () => {
+    pushNavState("new_chat_modal");
+    setNewChatSearch("");
+    setIsNewChatModalOpen(true);
+    setIsLoadingFriendsForChat(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/users/${currentUser.id}/profile`, {
+        headers: authHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFriendsForNewChat(data.friends || []);
+      }
+    } catch (e) { }
+    finally {
+      setIsLoadingFriendsForChat(false);
+    }
+  };
 
   const handleSubmitFeedback = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -2349,6 +2444,14 @@ export default function App() {
             {!isSidebarCollapsed ? (
               <div className="section-label">
                 <span>Direct Messages</span>
+                <button
+                  type="button"
+                  className="btn-section-action"
+                  title="New Chat with Friend"
+                  onClick={openNewChatModal}
+                >
+                  <Plus size={15} />
+                </button>
               </div>
             ) : (
               <div className="sidebar-collapsed-section-divider" title="Direct Messages" style={{ margin: "10px auto 6px" }} />
@@ -2366,10 +2469,14 @@ export default function App() {
                   const isActive = viewMode === "chat" && activeTab.type === "direct" && activeTab.id === u.id;
                   const isOnline = onlineUserIds.has(u.id);
                   const directUnread = unreadCounts[`direct_${u.id}`] || 0;
+                  const lastMsgTime = formatTileTimestamp(u.last_message_at);
+                  const lastMsgPreview = u.last_message
+                    ? (u.last_message_sender_id === currentUser?.id ? `You: ${u.last_message}` : u.last_message)
+                    : `@${u.username}`;
                   return !isSidebarCollapsed ? (
                     <div
                       key={u.id}
-                      className={`nav-item ${isActive ? "active" : ""}`}
+                      className={`nav-item nav-item-with-preview ${isActive ? "active" : ""}`}
                       onClick={() => selectTab("direct", u.id, u)}
                       title={`${u.name} (@${u.username})`}
                     >
@@ -2378,19 +2485,23 @@ export default function App() {
                         <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
                       </div>
                       <div className="nav-item-text-col">
-                        <div className="nav-item-name">{u.name}</div>
-                        {/* <div className="nav-item-handle">@{u.username}</div> */}
+                        <div className="nav-item-top-row">
+                          <span className="nav-item-name">{u.name}</span>
+                          {lastMsgTime && (
+                            <span className="nav-item-time">{lastMsgTime}</span>
+                          )}
+                        </div>
+                        <div className="nav-item-bottom-row">
+                          <span className={`nav-item-last-msg ${directUnread > 0 ? "unread" : ""}`}>
+                            {lastMsgPreview}
+                          </span>
+                          {directUnread > 0 && (
+                            <span className="unread-counter-badge" title={`${directUnread} unread message${directUnread > 1 ? "s" : ""}`}>
+                              {directUnread > 99 ? "99+" : directUnread}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {/* {u.gender && (
-                        <span className={getGenderBadgeClass(u.gender)} style={{ fontSize: "0.62rem", padding: "1px 5px" }}>
-                          {u.gender}
-                        </span>
-                      )} */}
-                      {directUnread > 0 && (
-                        <span className="unread-counter-badge" title={`${directUnread} unread message${directUnread > 1 ? "s" : ""}`}>
-                          {directUnread > 99 ? "99+" : directUnread}
-                        </span>
-                      )}
                     </div>
                   ) : (
                     <div
@@ -2448,10 +2559,17 @@ export default function App() {
                     const isActive = viewMode === "chat" && activeTab.type === "room" && activeTab.id === room.slug;
                     const isMod = isCurrentUserModerator(room);
                     const roomUnread = unreadCounts[`room_${room.slug.toLowerCase()}`] || 0;
+                    const roomLastTime = formatTileTimestamp(room.last_message_at);
+                    const roomSenderPrefix = room.last_message_sender_id === currentUser?.id
+                      ? "You"
+                      : (room.last_message_sender_name || "");
+                    const roomLastPreview = room.last_message
+                      ? (roomSenderPrefix ? `${roomSenderPrefix}: ${room.last_message}` : room.last_message)
+                      : (room.description || `#${room.slug}`);
                     return !isSidebarCollapsed ? (
                       <div
                         key={room.slug}
-                        className={`nav-item ${isActive ? "active" : ""}`}
+                        className={`nav-item nav-item-with-preview ${isActive ? "active" : ""}`}
                         onClick={() => selectTab("room", room.slug, room)}
                         title={`# ${room.title}`}
                       >
@@ -2462,30 +2580,46 @@ export default function App() {
                             <Hash size={15} />
                           )}
                         </div>
-                        <span className="nav-item-title">
-                          {room.title}
-                        </span>
-                        {room.is_private && <Lock size={12} style={{ opacity: 0.5, flexShrink: 0 }} title="Private Room" />}
-                        {isMod && <Crown size={12} className="mod-crown-icon" title="Moderator" />}
-                        {roomUnread > 0 && (
-                          <span className="unread-counter-badge" title={`${roomUnread} unread message${roomUnread > 1 ? "s" : ""}`}>
-                            {roomUnread > 99 ? "99+" : roomUnread}
-                          </span>
-                        )}
-                        {isMod && (
-                          <button
-                            type="button"
-                            className="btn-icon-sm"
-                            style={{ position: "relative" }}
-                            title="Room Settings"
-                            onClick={e => { e.stopPropagation(); openRoomSettings(room); }}
-                          >
-                            <Settings size={13} />
-                            {((room.pending_admissions_count > 0) || notificationsList.some(n => n.type === "room_admission" && n.room_slug === room.slug)) && (
-                              <span className="attention-blue-dot" style={{ top: -2, right: -2 }} title="Attention required: pending admissions" />
+                        <div className="nav-item-text-col">
+                          <div className="nav-item-top-row">
+                            <div className="nav-item-title-wrap">
+                              <span className="nav-item-title">
+                                {room.title}
+                              </span>
+                              {room.is_private && <Lock size={11} style={{ opacity: 0.55, flexShrink: 0 }} title="Private Room" />}
+                              {isMod && <Crown size={11} className="mod-crown-icon" title="Moderator" />}
+                            </div>
+                            {roomLastTime && (
+                              <span className="nav-item-time">{roomLastTime}</span>
                             )}
-                          </button>
-                        )}
+                          </div>
+                          <div className="nav-item-bottom-row">
+                            <span className={`nav-item-last-msg ${roomUnread > 0 ? "unread" : ""}`}>
+                              {roomLastPreview}
+                            </span>
+                            <div className="nav-item-right-badges">
+                              {roomUnread > 0 && (
+                                <span className="unread-counter-badge" title={`${roomUnread} unread message${roomUnread > 1 ? "s" : ""}`}>
+                                  {roomUnread > 99 ? "99+" : roomUnread}
+                                </span>
+                              )}
+                              {isMod && (
+                                <button
+                                  type="button"
+                                  className="btn-icon-sm"
+                                  style={{ position: "relative" }}
+                                  title="Room Settings"
+                                  onClick={e => { e.stopPropagation(); openRoomSettings(room); }}
+                                >
+                                  <Settings size={13} />
+                                  {((room.pending_admissions_count > 0) || notificationsList.some(n => n.type === "room_admission" && n.room_slug === room.slug)) && (
+                                    <span className="attention-blue-dot" style={{ top: -2, right: -2 }} title="Attention required: pending admissions" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       <div
@@ -2556,6 +2690,18 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* Mobile Floating Button to Create New Chat with Friend */}
+        <button
+          type="button"
+          className="floating-new-chat-btn mobile-only"
+          onClick={openNewChatModal}
+          aria-label="New Chat with Friend"
+          title="New Chat with Friend"
+        >
+          <MessageSquarePlus size={20} />
+          <span>New Chat</span>
+        </button>
 
         {/* Mobile Bottom Navigation Bar */}
         {renderMobileBottomNav()}
@@ -4757,6 +4903,177 @@ export default function App() {
                 No
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Chat with Friend Modal */}
+      {isNewChatModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsNewChatModalOpen(false)}>
+          <div className="modal-card new-chat-modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div className="new-chat-modal-icon-badge">
+                  <MessageSquarePlus size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.06rem", fontWeight: 700 }}>New Chat with Friend</h3>
+                  <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--text-dim)" }}>
+                    Select a friend to start a direct conversation
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={() => setIsNewChatModalOpen(false)}
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="new-chat-modal-body">
+              <div className="new-chat-search-box">
+                <Search size={15} className="new-chat-search-icon" />
+                <input
+                  type="text"
+                  placeholder="Search your friends..."
+                  value={newChatSearch}
+                  onChange={e => setNewChatSearch(e.target.value)}
+                  className="new-chat-search-input"
+                />
+                {newChatSearch && (
+                  <button
+                    type="button"
+                    className="btn-icon-sm"
+                    onClick={() => setNewChatSearch("")}
+                    title="Clear search"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+
+              {isLoadingFriendsForChat ? (
+                <div className="new-chat-empty-state">
+                  <Loader2 size={24} className="mate-spin-icon" style={{ color: "var(--text-dim)" }} />
+                  <span>Loading your friends...</span>
+                </div>
+              ) : (() => {
+                const q = newChatSearch.trim().toLowerCase();
+                const filteredFriends = friendsForNewChat.filter(f =>
+                  !q ||
+                  (f.name || "").toLowerCase().includes(q) ||
+                  (f.username || "").toLowerCase().includes(q)
+                );
+
+                if (friendsForNewChat.length === 0) {
+                  return (
+                    <div className="new-chat-empty-state">
+                      <Users size={28} style={{ color: "var(--text-dim)", opacity: 0.7 }} />
+                      <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)" }}>
+                        No friends added yet
+                      </div>
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-dim)", maxWidth: 260 }}>
+                        Explore the community and add friends to start private 1-on-1 conversations!
+                      </p>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ marginTop: "8px", padding: "9px 16px", fontSize: "0.84rem" }}
+                        onClick={() => {
+                          setIsNewChatModalOpen(false);
+                          pushNavState("explore");
+                          setViewMode("explore");
+                          loadExploreUsers("");
+                        }}
+                      >
+                        <Search size={14} />
+                        <span>Find Friends in Explore</span>
+                      </button>
+                    </div>
+                  );
+                }
+
+                if (filteredFriends.length === 0) {
+                  return (
+                    <div className="new-chat-empty-state">
+                      <Search size={24} style={{ color: "var(--text-dim)", opacity: 0.7 }} />
+                      <span style={{ fontSize: "0.84rem", color: "var(--text-dim)" }}>
+                        No friends matching "{newChatSearch}"
+                      </span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="new-chat-friends-list">
+                    {filteredFriends.map(friend => {
+                      const isOnline = onlineUserIds.has(friend.id);
+                      return (
+                        <div
+                          key={friend.id}
+                          className="new-chat-friend-item"
+                          onClick={() => {
+                            setIsNewChatModalOpen(false);
+                            setDirectConversations(prev => {
+                              if (prev.some(u => u.id === friend.id)) return prev;
+                              return [friend, ...prev];
+                            });
+                            selectTab("direct", friend.id, friend);
+                          }}
+                        >
+                          <div className="user-avatar" style={{ width: 38, height: 38 }}>
+                            <img src={avatarSrc(friend)} alt={friend.name} />
+                            <span className={`status-dot ${isOnline ? "online" : "offline"}`} />
+                          </div>
+                          <div className="new-chat-friend-info">
+                            <div className="new-chat-friend-name">{friend.name}</div>
+                            <div className="new-chat-friend-handle">@{friend.username}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-primary new-chat-start-btn"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setIsNewChatModalOpen(false);
+                              setDirectConversations(prev => {
+                                if (prev.some(u => u.id === friend.id)) return prev;
+                                return [friend, ...prev];
+                              });
+                              selectTab("direct", friend.id, friend);
+                            }}
+                          >
+                            <MessageSquare size={14} />
+                            <span>Chat</span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {friendsForNewChat.length > 0 && (
+              <div className="new-chat-modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ width: "100%", justifyContent: "center", fontSize: "0.82rem", padding: "9px 14px" }}
+                  onClick={() => {
+                    setIsNewChatModalOpen(false);
+                    pushNavState("explore");
+                    setViewMode("explore");
+                    loadExploreUsers("");
+                  }}
+                >
+                  <UserPlus size={14} />
+                  <span>Discover More Friends in Explore</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

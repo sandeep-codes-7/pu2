@@ -43,6 +43,9 @@ class UserOut(BaseModel):
     created_at: datetime
     friendship_status: Optional[str] = None  # None, "pending_sent", "pending_received", "accepted"
     friend_request_id: Optional[str] = None
+    last_message: Optional[str] = None
+    last_message_at: Optional[datetime] = None
+    last_message_sender_id: Optional[str] = None
     # Note: email is purposefully excluded from UserOut so emails are never exposed
 
     class Config:
@@ -135,6 +138,10 @@ class RoomOut(BaseModel):
     moderators: List[ModeratorOut] = []
     is_member: Optional[bool] = True
     pending_admissions_count: Optional[int] = 0
+    last_message: Optional[str] = None
+    last_message_at: Optional[datetime] = None
+    last_message_sender_name: Optional[str] = None
+    last_message_sender_id: Optional[str] = None
 
     class Config:
         from_attributes = True

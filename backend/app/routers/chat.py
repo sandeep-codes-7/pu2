@@ -169,6 +169,36 @@ async def _build_room_out(room: Room, db: AsyncSession, current_user_id: Optiona
         except Exception:
             pass
 
+    last_message_text = None
+    last_message_at = None
+    last_message_sender_name = None
+    last_message_sender_id = None
+    if is_member or is_mod or not is_private_room:
+        try:
+            res_last = await db.execute(
+                select(Message, User.name)
+                .outerjoin(User, Message.sender_id == User.id)
+                .filter(Message.room_id == room.id)
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            )
+            last_row = res_last.first()
+            if last_row:
+                msg_obj, sender_name = last_row
+                last_message_text = msg_obj.content
+                raw_dt = msg_obj.created_at
+                if raw_dt and raw_dt.tzinfo is None:
+                    raw_dt = raw_dt.replace(tzinfo=timezone.utc)
+                last_message_at = raw_dt
+                last_message_sender_name = sender_name
+                last_message_sender_id = msg_obj.sender_id
+        except Exception:
+            pass
+
+    room_created = getattr(room, "created_at", None) or datetime.utcnow()
+    if room_created and room_created.tzinfo is None:
+        room_created = room_created.replace(tzinfo=timezone.utc)
+
     return RoomOut(
         id=str(room.id),
         slug=room.slug,
@@ -179,10 +209,14 @@ async def _build_room_out(room: Room, db: AsyncSession, current_user_id: Optiona
         is_private=is_private_room,
         invite_code=invite_code if (is_member or is_mod) else None,
         online_count=len(hub.get_room_user_ids(room.slug)),
-        created_at=getattr(room, "created_at", None) or datetime.utcnow(),
+        created_at=room_created,
         moderators=moderator_list,
         is_member=is_member,
-        pending_admissions_count=pending_count
+        pending_admissions_count=pending_count,
+        last_message=last_message_text,
+        last_message_at=last_message_at,
+        last_message_sender_name=last_message_sender_name,
+        last_message_sender_id=last_message_sender_id
     )
 
 
@@ -311,6 +345,13 @@ async def list_rooms(
         except Exception as e:
             print(f"[ERROR] Failed building room out for {getattr(room, 'slug', '')}: {e}")
             continue
+    result.sort(
+        key=lambda r: (
+            r.last_message_at is not None,
+            r.last_message_at or r.created_at or datetime.min.replace(tzinfo=timezone.utc)
+        ),
+        reverse=True
+    )
     return result
 
 
@@ -1026,32 +1067,57 @@ async def list_direct_conversations(
     """
     Returns only profiles where a chat has actually been initiated
     (either current_user sent a message to them, or they sent a message to current_user),
-    ordered with the most recently active conversation on top.
+    ordered with the most recently active conversation on top, including last message preview.
     """
     res = await db.execute(
-        select(Message.sender_id, Message.recipient_id, Message.created_at).filter(
+        select(Message.sender_id, Message.recipient_id, Message.content, Message.created_at)
+        .filter(
             Message.room_id.is_(None),
             or_(
                 Message.sender_id == current_user.id,
                 Message.recipient_id == current_user.id
             )
         )
+        .order_by(Message.created_at.desc())
     )
-    partner_last_time = {}
-    for s_id, r_id, created_at in res.all():
+    partner_last_info = {}
+    for s_id, r_id, content, created_at in res.all():
         pid = r_id if s_id == current_user.id else s_id
         if pid and pid != current_user.id:
-            msg_time = created_at or datetime.min
-            if pid not in partner_last_time or msg_time > partner_last_time[pid]:
-                partner_last_time[pid] = msg_time
+            if pid not in partner_last_info:
+                msg_time = created_at
+                if msg_time and msg_time.tzinfo is None:
+                    msg_time = msg_time.replace(tzinfo=timezone.utc)
+                partner_last_info[pid] = {
+                    "content": content,
+                    "created_at": msg_time,
+                    "sort_time": created_at or datetime.min,
+                    "sender_id": s_id
+                }
 
-    if not partner_last_time:
+    if not partner_last_info:
         return []
 
-    sorted_partner_ids = sorted(partner_last_time.keys(), key=lambda p: partner_last_time[p], reverse=True)
+    sorted_partner_ids = sorted(
+        partner_last_info.keys(),
+        key=lambda p: partner_last_info[p]["sort_time"],
+        reverse=True
+    )
     res_users = await db.execute(select(User).filter(User.id.in_(sorted_partner_ids)))
     user_map = {u.id: u for u in res_users.scalars().all()}
-    return [user_map[pid] for pid in sorted_partner_ids if pid in user_map]
+
+    out = []
+    for pid in sorted_partner_ids:
+        u = user_map.get(pid)
+        if not u:
+            continue
+        u_out = UserOut.from_orm(u)
+        info = partner_last_info[pid]
+        u_out.last_message = info["content"]
+        u_out.last_message_at = info["created_at"]
+        u_out.last_message_sender_id = info["sender_id"]
+        out.append(u_out)
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────
