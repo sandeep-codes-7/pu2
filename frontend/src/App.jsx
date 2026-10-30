@@ -216,7 +216,7 @@ export default function App() {
   const pushNavState = useCallback((type) => {
     try {
       window.history.pushState({ puApp: true, type, ts: Date.now() }, "");
-    } catch (e) {}
+    } catch (e) { }
   }, []);
 
   const handleSystemOrInAppBack = useCallback((fallbackFn) => {
@@ -955,7 +955,7 @@ export default function App() {
             headers: token ? { Authorization: `Bearer ${token}` } : {}
           });
           if (msgRes.ok) setMessages(await msgRes.json());
-        } catch (e) {}
+        } catch (e) { }
       } else {
         alert(data.detail || "Could not join room");
       }
@@ -1976,77 +1976,77 @@ export default function App() {
               </button>
             </div>
 
-          <div className="notification-dropdown-list">
-            {notificationsList.length === 0 ? (
-              <div className="notification-empty">
-                <Bell size={26} style={{ opacity: 0.25, marginBottom: "8px" }} />
-                <p style={{ margin: 0, fontWeight: 600, fontSize: "0.86rem" }}>No notifications</p>
-                <span style={{ fontSize: "0.74rem", color: "var(--text-dim)", marginTop: "2px" }}>You are all caught up!</span>
-              </div>
-            ) : (
-              notificationsList.map(item => (
-                <div key={item.id} className="notification-item">
-                  <img
-                    src={avatarSrc({ avatar: item.avatar, username: item.user_username, name: item.user_name })}
-                    alt={item.user_name || "User"}
-                    className="notification-item-avatar"
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "6px" }}>
-                      <span style={{ fontWeight: 600, fontSize: "0.84rem" }}>{item.title}</span>
-                      <span style={{ fontSize: "0.68rem", color: "var(--text-dim)", whiteSpace: "nowrap" }}>
-                        {formatMessageTimestamp(item.created_at)}
-                      </span>
-                    </div>
-                    <p style={{ fontSize: "0.76rem", color: "var(--text-muted)", margin: "2px 0 6px", lineHeight: "1.3" }}>
-                      {item.description}
-                    </p>
-                    {item.type === "friend_request" && (
-                      <div className="notification-item-actions">
-                        <button
-                          type="button"
-                          className="btn-primary-xs"
-                          onClick={() => handleRespondFriendRequest(item.raw_id, "accepted")}
-                        >
-                          <Check size={12} /> Accept
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary-xs"
-                          onClick={() => handleRespondFriendRequest(item.raw_id, "ignored")}
-                        >
-                          <X size={12} /> Ignore
-                        </button>
-                      </div>
-                    )}
-                    {item.type === "room_admission" && (
-                      <div className="notification-item-actions">
-                        <button
-                          type="button"
-                          className="btn-primary-xs"
-                          onClick={() => handleRespondAdmission(item.room_slug, item.raw_id, "accepted")}
-                        >
-                          <Check size={12} /> Accept
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary-xs"
-                          onClick={() => handleRespondAdmission(item.room_slug, item.raw_id, "rejected")}
-                        >
-                          <X size={12} /> Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
+            <div className="notification-dropdown-list">
+              {notificationsList.length === 0 ? (
+                <div className="notification-empty">
+                  <Bell size={26} style={{ opacity: 0.25, marginBottom: "8px" }} />
+                  <p style={{ margin: 0, fontWeight: 600, fontSize: "0.86rem" }}>No notifications</p>
+                  <span style={{ fontSize: "0.74rem", color: "var(--text-dim)", marginTop: "2px" }}>You are all caught up!</span>
                 </div>
-              ))
-            )}
+              ) : (
+                notificationsList.map(item => (
+                  <div key={item.id} className="notification-item">
+                    <img
+                      src={avatarSrc({ avatar: item.avatar, username: item.user_username, name: item.user_name })}
+                      alt={item.user_name || "User"}
+                      className="notification-item-avatar"
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "6px" }}>
+                        <span style={{ fontWeight: 600, fontSize: "0.84rem" }}>{item.title}</span>
+                        <span style={{ fontSize: "0.68rem", color: "var(--text-dim)", whiteSpace: "nowrap" }}>
+                          {formatMessageTimestamp(item.created_at)}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: "0.76rem", color: "var(--text-muted)", margin: "2px 0 6px", lineHeight: "1.3" }}>
+                        {item.description}
+                      </p>
+                      {item.type === "friend_request" && (
+                        <div className="notification-item-actions">
+                          <button
+                            type="button"
+                            className="btn-primary-xs"
+                            onClick={() => handleRespondFriendRequest(item.raw_id, "accepted")}
+                          >
+                            <Check size={12} /> Accept
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-secondary-xs"
+                            onClick={() => handleRespondFriendRequest(item.raw_id, "ignored")}
+                          >
+                            <X size={12} /> Ignore
+                          </button>
+                        </div>
+                      )}
+                      {item.type === "room_admission" && (
+                        <div className="notification-item-actions">
+                          <button
+                            type="button"
+                            className="btn-primary-xs"
+                            onClick={() => handleRespondAdmission(item.room_slug, item.raw_id, "accepted")}
+                          >
+                            <Check size={12} /> Accept
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-secondary-xs"
+                            onClick={() => handleRespondAdmission(item.room_slug, item.raw_id, "rejected")}
+                          >
+                            <X size={12} /> Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-};
+        )}
+      </div>
+    );
+  };
 
   // Mobile Bottom Navigation Bar Component
   const renderMobileBottomNav = () => (
@@ -2286,13 +2286,13 @@ export default function App() {
                       </div>
                       <div className="nav-item-text-col">
                         <div className="nav-item-name">{u.name}</div>
-                        <div className="nav-item-handle">@{u.username}</div>
+                        {/* <div className="nav-item-handle">@{u.username}</div> */}
                       </div>
-                      {u.gender && (
+                      {/* {u.gender && (
                         <span className={getGenderBadgeClass(u.gender)} style={{ fontSize: "0.62rem", padding: "1px 5px" }}>
                           {u.gender}
                         </span>
-                      )}
+                      )} */}
                       {directUnread > 0 && (
                         <span className="unread-counter-badge" title={`${directUnread} unread message${directUnread > 1 ? "s" : ""}`}>
                           {directUnread > 99 ? "99+" : directUnread}
@@ -2352,73 +2352,73 @@ export default function App() {
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: isSidebarCollapsed ? "6px" : "3px" }}>
                   {userJoinedRooms.map(room => {
-                  const isActive = viewMode === "chat" && activeTab.type === "room" && activeTab.id === room.slug;
-                  const isMod = isCurrentUserModerator(room);
-                  const roomUnread = unreadCounts[`room_${room.slug.toLowerCase()}`] || 0;
-                  return !isSidebarCollapsed ? (
-                    <div
-                      key={room.slug}
-                      className={`nav-item ${isActive ? "active" : ""}`}
-                      onClick={() => selectTab("room", room.slug, room)}
-                      title={`# ${room.title}`}
-                    >
-                      <div className="nav-item-hash-box">
-                        {room.picture ? (
-                          <img src={`${API_BASE}${room.picture}`} alt={room.title} className="nav-item-room-pic" />
-                        ) : (
-                          <Hash size={15} />
+                    const isActive = viewMode === "chat" && activeTab.type === "room" && activeTab.id === room.slug;
+                    const isMod = isCurrentUserModerator(room);
+                    const roomUnread = unreadCounts[`room_${room.slug.toLowerCase()}`] || 0;
+                    return !isSidebarCollapsed ? (
+                      <div
+                        key={room.slug}
+                        className={`nav-item ${isActive ? "active" : ""}`}
+                        onClick={() => selectTab("room", room.slug, room)}
+                        title={`# ${room.title}`}
+                      >
+                        <div className="nav-item-hash-box">
+                          {room.picture ? (
+                            <img src={`${API_BASE}${room.picture}`} alt={room.title} className="nav-item-room-pic" />
+                          ) : (
+                            <Hash size={15} />
+                          )}
+                        </div>
+                        <span className="nav-item-title">
+                          {room.title}
+                        </span>
+                        {room.is_private && <Lock size={12} style={{ opacity: 0.5, flexShrink: 0 }} title="Private Room" />}
+                        {isMod && <Crown size={12} className="mod-crown-icon" title="Moderator" />}
+                        {roomUnread > 0 && (
+                          <span className="unread-counter-badge" title={`${roomUnread} unread message${roomUnread > 1 ? "s" : ""}`}>
+                            {roomUnread > 99 ? "99+" : roomUnread}
+                          </span>
+                        )}
+                        {isMod && (
+                          <button
+                            type="button"
+                            className="btn-icon-sm"
+                            style={{ position: "relative" }}
+                            title="Room Settings"
+                            onClick={e => { e.stopPropagation(); openRoomSettings(room); }}
+                          >
+                            <Settings size={13} />
+                            {((room.pending_admissions_count > 0) || notificationsList.some(n => n.type === "room_admission" && n.room_slug === room.slug)) && (
+                              <span className="attention-blue-dot" style={{ top: -2, right: -2 }} title="Attention required: pending admissions" />
+                            )}
+                          </button>
                         )}
                       </div>
-                      <span className="nav-item-title">
-                        {room.title}
-                      </span>
-                      {room.is_private && <Lock size={12} style={{ opacity: 0.5, flexShrink: 0 }} title="Private Room" />}
-                      {isMod && <Crown size={12} className="mod-crown-icon" title="Moderator" />}
-                      {roomUnread > 0 && (
-                        <span className="unread-counter-badge" title={`${roomUnread} unread message${roomUnread > 1 ? "s" : ""}`}>
-                          {roomUnread > 99 ? "99+" : roomUnread}
-                        </span>
-                      )}
-                      {isMod && (
-                        <button
-                          type="button"
-                          className="btn-icon-sm"
-                          style={{ position: "relative" }}
-                          title="Room Settings"
-                          onClick={e => { e.stopPropagation(); openRoomSettings(room); }}
-                        >
-                          <Settings size={13} />
-                          {((room.pending_admissions_count > 0) || notificationsList.some(n => n.type === "room_admission" && n.room_slug === room.slug)) && (
-                            <span className="attention-blue-dot" style={{ top: -2, right: -2 }} title="Attention required: pending admissions" />
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div
-                      key={room.slug}
-                      className={`nav-item collapsed-nav-item ${isActive ? "active" : ""}`}
-                      onClick={() => selectTab("room", room.slug, room)}
-                      title={`# ${room.title}${isMod ? " (Moderator)" : ""}${roomUnread > 0 ? ` (${roomUnread} new)` : ""}`}
-                    >
-                      {room.picture ? (
-                        <img src={`${API_BASE}${room.picture}`} alt={room.title} className="collapsed-room-pic" />
-                      ) : (
-                        <div className="collapsed-room-hash">
-                          <Hash size={17} />
-                        </div>
-                      )}
-                      {roomUnread > 0 && (
-                        <span className="unread-counter-badge collapsed">
-                          {roomUnread > 99 ? "99+" : roomUnread}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
+                    ) : (
+                      <div
+                        key={room.slug}
+                        className={`nav-item collapsed-nav-item ${isActive ? "active" : ""}`}
+                        onClick={() => selectTab("room", room.slug, room)}
+                        title={`# ${room.title}${isMod ? " (Moderator)" : ""}${roomUnread > 0 ? ` (${roomUnread} new)` : ""}`}
+                      >
+                        {room.picture ? (
+                          <img src={`${API_BASE}${room.picture}`} alt={room.title} className="collapsed-room-pic" />
+                        ) : (
+                          <div className="collapsed-room-hash">
+                            <Hash size={17} />
+                          </div>
+                        )}
+                        {roomUnread > 0 && (
+                          <span className="unread-counter-badge collapsed">
+                            {roomUnread > 99 ? "99+" : roomUnread}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -2738,11 +2738,11 @@ export default function App() {
                                   <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{f.name}</div>
                                   <div style={{ fontSize: "0.74rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{f.username}</div>
                                 </div>
-                                {f.gender && (
+                                {/* {f.gender && (
                                   <span className={getGenderBadgeClass(f.gender)} style={{ fontSize: "0.58rem", padding: "1px 5px" }}>
                                     {f.gender}
                                   </span>
-                                )}
+                                )} */}
                               </div>
                               <div style={{ display: "flex", gap: "6px" }}>
                                 <button
@@ -3996,74 +3996,74 @@ export default function App() {
                       {exploreFilter === "friends"
                         ? "You haven't added any friends yet. Switch to 'All Users' to discover people and send requests!"
                         : searchQuery
-                        ? `No users found for "${searchQuery}"`
-                        : "Start searching for friends above!"}
+                          ? `No users found for "${searchQuery}"`
+                          : "Start searching for friends above!"}
                     </div>
                   ) : displayedExploreUsers.map(u => (
-                <div key={u.id} className="user-card">
-                  <div className="user-card-header" onClick={() => openUserProfile(u.id)}>
-                    <div className="user-avatar" style={{ width: "42px", height: "42px" }}>
-                      <img src={avatarSrc(u)} alt={u.name} />
+                    <div key={u.id} className="user-card">
+                      <div className="user-card-header" onClick={() => openUserProfile(u.id)}>
+                        <div className="user-avatar" style={{ width: "42px", height: "42px" }}>
+                          <img src={avatarSrc(u)} alt={u.name} />
+                        </div>
+                        <div style={{ overflow: "hidden" }}>
+                          <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#fff" }}>{u.name}</div>
+                          <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {/* <span className={getGenderBadgeClass(u.gender)}>{u.gender || "Prefer not to say"}</span> */}
+                        {u.friendship_status === "accepted" && (
+                          <span className="badge-friends"><Check size={11} /> Friends</span>
+                        )}
+                      </div>
+                      {u.bio && <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "4px", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{u.bio}</p>}
+                      <div style={{ marginTop: "auto", display: "flex", gap: "8px", paddingTop: "10px" }}>
+                        {u.friendship_status === "accepted" ? (
+                          <>
+                            <button className="btn-primary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => { setViewMode("chat"); selectTab("direct", u.id, u); }}>
+                              <MessageSquare size={14} /> Chat
+                            </button>
+                            <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
+                              Profile
+                            </button>
+                          </>
+                        ) : u.friendship_status === "pending_sent" ? (
+                          <>
+                            <button className="btn-secondary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem", opacity: 0.8 }} disabled>
+                              <Clock size={14} /> Requested
+                            </button>
+                            <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
+                              Profile
+                            </button>
+                          </>
+                        ) : u.friendship_status === "pending_received" ? (
+                          <>
+                            <button className="btn-primary" style={{ flex: 1, padding: "8px 8px", fontSize: "0.78rem" }} onClick={() => handleRespondFriendRequest(u.friend_request_id, "accepted")}>
+                              <Check size={13} /> Accept
+                            </button>
+                            <button className="btn-danger" style={{ flex: 1, padding: "8px 8px", fontSize: "0.78rem" }} onClick={() => handleRespondFriendRequest(u.friend_request_id, "ignored")}>
+                              <X size={13} /> Ignore
+                            </button>
+                            <button className="btn-secondary" style={{ padding: "8px 10px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
+                              Profile
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button className="btn-primary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => handleSendFriendRequest(u.id)}>
+                              <UserPlus size={14} /> Add Friend
+                            </button>
+                            <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
+                              Profile
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ overflow: "hidden" }}>
-                      <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#fff" }}>{u.name}</div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span className={getGenderBadgeClass(u.gender)}>{u.gender || "Prefer not to say"}</span>
-                    {u.friendship_status === "accepted" && (
-                      <span className="badge-friends"><Check size={11} /> Friends</span>
-                    )}
-                  </div>
-                  {u.bio && <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "4px", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{u.bio}</p>}
-                  <div style={{ marginTop: "auto", display: "flex", gap: "8px", paddingTop: "10px" }}>
-                    {u.friendship_status === "accepted" ? (
-                      <>
-                        <button className="btn-primary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => { setViewMode("chat"); selectTab("direct", u.id, u); }}>
-                          <MessageSquare size={14} /> Chat
-                        </button>
-                        <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
-                          Profile
-                        </button>
-                      </>
-                    ) : u.friendship_status === "pending_sent" ? (
-                      <>
-                        <button className="btn-secondary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem", opacity: 0.8 }} disabled>
-                          <Clock size={14} /> Requested
-                        </button>
-                        <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
-                          Profile
-                        </button>
-                      </>
-                    ) : u.friendship_status === "pending_received" ? (
-                      <>
-                        <button className="btn-primary" style={{ flex: 1, padding: "8px 8px", fontSize: "0.78rem" }} onClick={() => handleRespondFriendRequest(u.friend_request_id, "accepted")}>
-                          <Check size={13} /> Accept
-                        </button>
-                        <button className="btn-danger" style={{ flex: 1, padding: "8px 8px", fontSize: "0.78rem" }} onClick={() => handleRespondFriendRequest(u.friend_request_id, "ignored")}>
-                          <X size={13} /> Ignore
-                        </button>
-                        <button className="btn-secondary" style={{ padding: "8px 10px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
-                          Profile
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="btn-primary" style={{ flex: 1, padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => handleSendFriendRequest(u.id)}>
-                          <UserPlus size={14} /> Add Friend
-                        </button>
-                        <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: "0.82rem" }} onClick={() => openUserProfile(u.id)}>
-                          Profile
-                        </button>
-                      </>
-                    )}
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          );
-        })()}
+              );
+            })()}
           </div>
           {renderMobileBottomNav()}
         </main>
@@ -4156,10 +4156,10 @@ export default function App() {
                 {(() => {
                   const filteredRooms = roomsFilterQuery.trim()
                     ? rooms.filter(r =>
-                        r.title.toLowerCase().includes(roomsFilterQuery.toLowerCase()) ||
-                        r.slug.toLowerCase().includes(roomsFilterQuery.toLowerCase()) ||
-                        (r.description && r.description.toLowerCase().includes(roomsFilterQuery.toLowerCase()))
-                      )
+                      r.title.toLowerCase().includes(roomsFilterQuery.toLowerCase()) ||
+                      r.slug.toLowerCase().includes(roomsFilterQuery.toLowerCase()) ||
+                      (r.description && r.description.toLowerCase().includes(roomsFilterQuery.toLowerCase()))
+                    )
                     : rooms;
 
                   return (
@@ -4458,11 +4458,11 @@ export default function App() {
                       <span className="msg-sender" onClick={() => openUserProfile(msg.sender_id)}>
                         {isOutgoing ? "You" : msg.sender_name}
                       </span>
-                      {msg.sender_gender && (
+                      {/* {msg.sender_gender && (
                         <span className={getGenderBadgeClass(msg.sender_gender)} style={{ fontSize: "0.6rem", padding: "1px 4px" }}>
                           {msg.sender_gender}
                         </span>
-                      )}
+                      )} */}
                       <span className="msg-time">{time}</span>
                     </div>
                     <div className="msg-text">{msg.content}</div>
@@ -4490,10 +4490,10 @@ export default function App() {
                   !activeTab.id
                     ? "Select a chat first..."
                     : activeTab.type === "room" && activeRoom && !isUserRoomParticipant(activeRoom)
-                    ? `Join #${activeRoom?.title || "room"} to participate...`
-                    : activeTab.type === "room"
-                    ? `Message ${activeRoom?.title || "room"}...`
-                    : `Message ${activeDirectUser?.name || "user"}...`
+                      ? `Join #${activeRoom?.title || "room"} to participate...`
+                      : activeTab.type === "room"
+                        ? `Message ${activeRoom?.title || "room"}...`
+                        : `Message ${activeDirectUser?.name || "user"}...`
                 }
                 value={inputMessage}
                 onChange={handleInputChange}
