@@ -11,6 +11,7 @@ if current_dir.name == "app":
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Depends, status
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.future import select
 import uvicorn
@@ -93,6 +94,26 @@ def health():
         "service": "PairUP Engine",
         "timestamp": datetime.datetime.utcnow().isoformat()
     }
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def serve_sitemap():
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://pairup.cc/</loc>
+    <lastmod>2026-10-30</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>"""
+    return Response(content=xml_content, media_type="application/xml")
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def serve_robots():
+    robots_content = "User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n\nSitemap: https://pairup.cc/sitemap.xml\n"
+    return Response(content=robots_content, media_type="text/plain")
 
 @app.get("/api/presence")
 def get_presence(_current_user: User = Depends(get_current_user)):
