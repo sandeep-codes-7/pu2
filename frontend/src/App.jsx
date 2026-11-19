@@ -3,7 +3,7 @@ import './App.css';
 import LandingPage from './LandingPage.jsx';
 import {
   Hash, MessageSquare, Megaphone, Users, Send, Plus, LogOut, Search,
-  UserPlus, Check, X, UserCheck, Clock, Sparkles, Edit3,
+  UserPlus, Check, X, UserCheck, Clock, Shuffle, Edit3,
   Shield, ShieldPlus, ShieldOff, Trash2, Settings, Camera,
   Upload, Image, ChevronDown, Crown, UserMinus, User as UserIcon,
   Heart, AlertCircle, CheckCircle2, Loader2, Flame,
@@ -46,12 +46,39 @@ const ANIMAL_EMOJIS = {
   Raccoon: "🦝"
 };
 
+const isJwtExpired = (jwt) => {
+  if (!jwt) return true;
+  try {
+    const parts = jwt.split(".");
+    if (parts.length !== 3) return true;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    if (!payload.exp) return false;
+    return payload.exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
+};
+
 export default function App() {
   // Auth
-  const [token, setToken] = useState(() => localStorage.getItem("pairup_token") || "");
+  const [token, setToken] = useState(() => {
+    const saved = localStorage.getItem("pairup_token") || "";
+    if (saved && isJwtExpired(saved)) {
+      localStorage.removeItem("pairup_token");
+      localStorage.removeItem("pairup_user");
+      return "";
+    }
+    return saved;
+  });
   const [currentUser, setCurrentUser] = useState(() => {
-    const s = localStorage.getItem("pairup_user");
-    return s ? JSON.parse(s) : null;
+    const savedToken = localStorage.getItem("pairup_token") || "";
+    if (!savedToken || isJwtExpired(savedToken)) return null;
+    try {
+      const s = localStorage.getItem("pairup_user");
+      return s ? JSON.parse(s) : null;
+    } catch {
+      return null;
+    }
   });
   const [googleClientId, setGoogleClientId] = useState("");
   const [demoUsername, setDemoUsername] = useState("");
@@ -60,7 +87,10 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [loginNotice, setLoginNotice] = useState("");
   const [loginReturnPath, setLoginReturnPath] = useState("");
-  const [showLandingPage, setShowLandingPage] = useState(() => !localStorage.getItem("pairup_token"));
+  const [showLandingPage, setShowLandingPage] = useState(() => {
+    const saved = localStorage.getItem("pairup_token") || "";
+    return !saved || isJwtExpired(saved);
+  });
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Snackbar Notification
@@ -475,7 +505,7 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     if (token) {
       try { await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }); } catch (e) { }
     }
@@ -490,7 +520,27 @@ export default function App() {
     setMateConversationId(null);
     setMateConversationData(null);
     setMateMessages([]);
-  };
+  }, [token]);
+
+  const handlingExpiryRef = useRef(false);
+  const handleExpiredSession = useCallback(() => {
+    if (handlingExpiryRef.current) return;
+    handlingExpiryRef.current = true;
+    if (wsRef.current) wsRef.current.close();
+    setToken("");
+    setCurrentUser(null);
+    localStorage.removeItem("pairup_token");
+    localStorage.removeItem("pairup_user");
+    setShowLandingPage(true);
+    setShowAuthModal(true);
+    setLoginNotice("Your session expired. Please sign in again.");
+    setMateStatus("idle");
+    setMateConversationId(null);
+    setMateConversationData(null);
+    setMateMessages([]);
+    showSnackbar("Session expired. Please sign in again.", "error");
+    setTimeout(() => { handlingExpiryRef.current = false; }, 1000);
+  }, [showSnackbar]);
 
   // ──────────────────────────────────────────────────────────────
   // DATA LOADERS
@@ -512,34 +562,38 @@ export default function App() {
     if (!token) return;
     try {
       const res = await fetch(`${API_BASE}/api/direct-conversations`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) { handleExpiredSession(); return; }
       if (res.ok) setDirectConversations(await res.json());
     } catch (e) { }
-  }, [token]);
+  }, [token, handleExpiredSession]);
 
   const loadExploreUsers = useCallback(async (query = "") => {
     if (!token) return;
     try {
       const url = query ? `${API_BASE}/api/explore-users?query=${encodeURIComponent(query)}` : `${API_BASE}/api/explore-users`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) { handleExpiredSession(); return; }
       if (res.ok) setExploreUsersList(await res.json());
     } catch (e) { }
-  }, [token]);
+  }, [token, handleExpiredSession]);
 
   const refreshPendingCount = useCallback(async () => {
     if (!token) return;
     try {
       const res = await fetch(`${API_BASE}/api/friends/pending`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) { handleExpiredSession(); return; }
       if (res.ok) {
         const list = await res.json();
         setPendingRequestsCount(list.length);
       }
     } catch (e) { }
-  }, [token]);
+  }, [token, handleExpiredSession]);
 
   const fetchNotifications = useCallback(async () => {
     if (!token) return;
     try {
       const res = await fetch(`${API_BASE}/api/notifications`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) { handleExpiredSession(); return; }
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];
@@ -551,7 +605,7 @@ export default function App() {
         setPendingRequestsCount(friendReqCount);
       }
     } catch (e) { }
-  }, [token]);
+  }, [token, handleExpiredSession]);
 
   const toggleNotifications = (mode = "topright") => {
     setNotificationsOpenMode(prev => {
@@ -789,7 +843,7 @@ export default function App() {
               mutual_interest: true,
               partner_user_id: data.partner_user_id
             } : prev);
-            callbacksRef.current.showSnackbar?.("It's a Match! You are now friends on PairUP! 🎉", "success");
+            callbacksRef.current.showSnackbar?.("Mutual match — you are now friends on PairUP", "success");
             callbacksRef.current.refreshDirectConversations?.();
             callbacksRef.current.refreshPendingCount?.();
           }
@@ -810,21 +864,21 @@ export default function App() {
         } else if (data.type === "friend_request_received") {
           callbacksRef.current.refreshPendingCount?.();
           callbacksRef.current.fetchNotifications?.();
-          callbacksRef.current.showSnackbar?.(`New friend request from ${data.name || "a user"}!`, "info");
+          callbacksRef.current.showSnackbar?.(`New friend request from ${data.name || "a user"}`, "info");
         } else if (data.type === "friend_request_accepted") {
           callbacksRef.current.refreshDirectConversations?.();
           callbacksRef.current.fetchNotifications?.();
-          callbacksRef.current.showSnackbar?.(`${data.name} accepted your friend request! 🎉`, "success");
+          callbacksRef.current.showSnackbar?.(`${data.name} accepted your friend request`, "success");
         } else if (data.type === "room_admission_received") {
           callbacksRef.current.loadRooms?.();
           callbacksRef.current.fetchNotifications?.();
           callbacksRef.current.showSnackbar?.(`${data.name} requested to join #${data.room_title}`, "info");
         } else if (data.type === "room_admission_status") {
           if (data.status === "accepted") {
-            callbacksRef.current.showSnackbar?.(`Your admission to #${data.room_title} was accepted! 🎉`, "success");
+            callbacksRef.current.showSnackbar?.(`Your admission to #${data.room_title} was accepted`, "success");
             callbacksRef.current.loadRooms?.();
           } else {
-            callbacksRef.current.showSnackbar?.(`Admission request to #${data.room_title} was declined.`, "info");
+            callbacksRef.current.showSnackbar?.(`Admission request to #${data.room_title} was declined`, "info");
           }
         } else if (data.type === "error") {
           callbacksRef.current.showSnackbar?.(data.message, "error");
@@ -1092,11 +1146,13 @@ export default function App() {
       try {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const res = await fetch(`${API_BASE}/api/rooms/${id}/messages`, { headers });
+        if (res.status === 401) { handleExpiredSession(); return; }
         if (res.ok) setMessages(await res.json());
       } catch (e) { }
     } else {
       try {
         const res = await fetch(`${API_BASE}/api/direct/${id}/messages`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.status === 401) { handleExpiredSession(); return; }
         if (res.ok) setMessages(await res.json());
       } catch (e) { }
     }
@@ -1185,6 +1241,7 @@ export default function App() {
     setProfileTab(initialTab);
     try {
       const res = await fetch(`${API_BASE}/api/users/${userId}/profile`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) { handleExpiredSession(); return; }
       if (res.ok) {
         const data = await res.json();
         setProfileData(data);
@@ -1467,11 +1524,11 @@ export default function App() {
       }));
 
       if (data.mutual_interest) {
-        showSnackbar("It's a Match! You are now friends on PairUP! 🎉", "success");
+        showSnackbar("Mutual match — you are now friends on PairUP", "success");
         refreshDirectConversations();
         refreshPendingCount();
       } else {
-        showSnackbar("You expressed interest! Waiting for them...", "info");
+        showSnackbar("Interest recorded — waiting for the other person", "info");
       }
     } catch (e) {
       showSnackbar("Error recording interest", "error");
@@ -2027,7 +2084,7 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Failed to submit feedback");
-      showSnackbar("Thank you for your feedback! ✨", "success");
+      showSnackbar("Thank you for your feedback", "success");
       setIsFeedbackModalOpen(false);
       setFeedbackComment("");
       setFeedbackRating(5);
@@ -2315,7 +2372,7 @@ export default function App() {
         aria-label="Mate"
       >
         <div className="mobile-nav-icon-wrap">
-          <Sparkles size={21} />
+          <Shuffle size={20} strokeWidth={1.5} />
         </div>
       </button>
 
@@ -2428,7 +2485,7 @@ export default function App() {
             onClick={() => { pushNavState("mate"); handleNavigateMate(); }}
             title="Mate - Anonymous Matchmaking"
           >
-            <Sparkles size={16} />
+            <Shuffle size={16} strokeWidth={1.5} />
             {!isSidebarCollapsed && (
               <>
                 <span>Mate</span>
@@ -3812,7 +3869,7 @@ export default function App() {
             <div className="mate-page-card">
               <div style={{ textAlign: "center" }}>
                 <div className="mate-badge">
-                  <Sparkles size={14} /> Anonymous Matchmaking
+                  <Shuffle size={14} strokeWidth={1.5} /> Anonymous Matchmaking
                 </div>
                 <h2 className="mate-title brand-gradient">Find your mate</h2>
                 <p className="mate-subtitle">
@@ -4010,9 +4067,9 @@ export default function App() {
                 <Heart size={14} fill={mateConversationData?.my_interest ? "currentColor" : "none"} />
                 <span className="header-btn-text">
                   {mateConversationData?.mutual_interest
-                    ? "Friends! 🎉"
+                    ? "Friends"
                     : mateConversationData?.my_interest
-                      ? "Interested ✓"
+                      ? "Interested"
                       : "Interested"}
                 </span>
               </button>
@@ -4044,11 +4101,11 @@ export default function App() {
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                 <Heart size={20} color="#18181b" />
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: "0.92rem", color: "var(--text-main)" }}>
-                    Mutual Interest Confirmed! 🎉
+                  <div style={{ fontWeight: 600, fontSize: "0.92rem", color: "var(--text-main)" }}>
+                    Mutual Interest Confirmed
                   </div>
                   <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                    You and {mateConversationData.partner_nickname} liked each other and are now reciprocal friends on PairUP!
+                    You and {mateConversationData.partner_nickname} are now friends on PairUP.
                   </div>
                 </div>
               </div>
@@ -4367,7 +4424,7 @@ export default function App() {
                   The announcements broadcast feature is currently under construction. Soon, verified moderators and administrators will publish pinned bulletins, alerts, and live event updates here.
                 </p>
                 <div className="construction-badge">
-                  <Sparkles size={14} /> Coming Soon
+                  <Clock size={14} strokeWidth={1.5} /> Coming Soon
                 </div>
               </div>
             ) : (
@@ -5133,11 +5190,11 @@ export default function App() {
                   })}
                 </div>
                 <span className="feedback-rating-caption">
-                  {(feedbackHoverRating || feedbackRating) === 5 && "Excellent! Love it ⭐"}
-                  {(feedbackHoverRating || feedbackRating) === 4 && "Great experience 👍"}
-                  {(feedbackHoverRating || feedbackRating) === 3 && "Good, could be better 🙂"}
-                  {(feedbackHoverRating || feedbackRating) === 2 && "Needs improvement 🛠️"}
-                  {(feedbackHoverRating || feedbackRating) === 1 && "Poor experience 😔"}
+                  {(feedbackHoverRating || feedbackRating) === 5 && "Excellent"}
+                  {(feedbackHoverRating || feedbackRating) === 4 && "Great experience"}
+                  {(feedbackHoverRating || feedbackRating) === 3 && "Good, could be better"}
+                  {(feedbackHoverRating || feedbackRating) === 2 && "Needs improvement"}
+                  {(feedbackHoverRating || feedbackRating) === 1 && "Poor experience"}
                 </span>
               </div>
 

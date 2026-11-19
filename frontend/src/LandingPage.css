@@ -167,126 +167,133 @@
 /* ── HERO SECTION ── */
 .landing-hero-section {
   position: relative;
-  padding: 72px 24px 50px;
+  padding: 64px 24px 56px;
   max-width: 1140px;
   margin: 0 auto;
-  text-align: center;
+}
+
+.landing-hero-split {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 48px;
+  align-items: center;
+}
+
+.landing-hero-copy {
+  text-align: left;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .landing-hero-backdrop {
   display: none;
 }
 
-.landing-pill-badge,
-.landing-hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 14px;
-  border-radius: var(--radius-full);
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: #52525b;
-  margin-bottom: 20px;
-}
-
-.landing-pill-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #15803d;
-}
-
 .landing-hero-title {
   font-family: var(--font-display);
-  font-size: clamp(2.2rem, 5.2vw, 3.4rem);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
-  margin-bottom: 18px;
-  color: #09090b;
-  max-width: 840px;
+  font-size: clamp(2.1rem, 4vw, 3.2rem);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+  margin-bottom: 16px;
+  color: var(--text-main);
+  max-width: 560px;
 }
 
 .landing-hero-subtitle {
   font-size: 1.05rem;
   line-height: 1.6;
-  color: #52525b;
-  max-width: 620px;
-  margin: 0 auto 30px;
+  color: var(--text-muted);
+  max-width: 500px;
+  margin: 0 0 28px;
 }
 
 .landing-hero-subtitle strong {
-  color: #09090b;
+  color: var(--text-main);
   font-weight: 600;
 }
 
 .landing-hero-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 12px;
-  margin-bottom: 30px;
+  margin-bottom: 24px;
   flex-wrap: wrap;
 }
 
 .landing-hero-cta-primary {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  padding: 12px 24px;
+  gap: 8px;
+  height: 44px;
+  padding: 0 20px;
   border-radius: var(--radius-md);
-  background: #18181b;
+  background: #171717;
   color: #ffffff;
-  font-weight: 600;
-  font-size: 0.95rem;
-  border: 1px solid #18181b;
+  font-weight: 500;
+  font-size: 0.92rem;
+  border: 1px solid #171717;
   box-shadow: var(--shadow-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s var(--ease-out), border-color 0.15s var(--ease-out), transform 0.12s var(--ease-out);
   text-decoration: none;
 }
 
 .landing-hero-cta-primary:hover {
-  background: #27272a;
-  border-color: #27272a;
+  background: #262626;
+  border-color: #262626;
+}
+
+.landing-hero-cta-primary:active {
+  transform: scale(0.98);
 }
 
 .landing-hero-cta-secondary {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  padding: 12px 22px;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px;
   border-radius: var(--radius-md);
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
-  color: #18181b;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
   font-weight: 500;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s var(--ease-out), border-color 0.15s var(--ease-out), transform 0.12s var(--ease-out);
   text-decoration: none;
   box-shadow: var(--shadow-sm);
 }
 
 .landing-hero-cta-secondary:hover {
-  background: #f4f4f5;
-  border-color: #d4d4d8;
-  color: #09090b;
+  background: var(--bg-card-hover);
+  border-color: var(--border-accent);
+}
+
+.landing-hero-cta-secondary:active {
+  transform: scale(0.98);
 }
 
 .landing-trust-strip {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 24px;
+  justify-content: flex-start;
+  gap: 20px;
   flex-wrap: wrap;
-  margin-bottom: 36px;
+  margin-bottom: 0;
+}
+
+@media (max-width: 920px) {
+  .landing-hero-split {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .landing-hero-copy {
+    align-items: flex-start;
+  }
 }
 
 .trust-item {

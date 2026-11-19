@@ -40,8 +40,8 @@
 
 .admin-login-title {
   font-size: 1.4rem;
-  font-weight: 800;
-  margin: 0 0 6px;
+  font-weight: 600;
+  margin: 0 0 8px;
   letter-spacing: -0.02em;
 }
 
@@ -83,10 +83,8 @@
 }
 
 .admin-field label {
-  font-size: 0.76rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 0.8rem;
+  font-weight: 500;
   color: #a1a1aa;
 }
 
@@ -505,12 +503,11 @@
 
 .admin-table th {
   text-align: left;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #71717a;
-  padding: 10px 10px;
-  border-bottom: 1px solid #222226;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #85858b;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(237, 237, 237, 0.08);
 }
 
 .admin-table td {

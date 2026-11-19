@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './LandingPage.css';
 import {
-  Sparkles, Zap, Shield, Users, MessageSquare, ArrowRight,
+  Zap, Shield, Users, MessageSquare, ArrowRight,
   Heart, CheckCircle2, Lock, Flame, Info, ChevronDown, Check,
   HelpCircle, Compass, UserCheck, LogIn, ExternalLink, Globe,
   Hash, Crown, X, RefreshCw, Smile, ArrowUpRight, Sun, Moon
@@ -14,9 +14,9 @@ const RANDOM_GUEST_NAMES = [
 ];
 
 const SAMPLE_INTERESTS = [
-  "💻 Coding", "🎮 Gaming", "🎧 Music", "🚀 AI & Tech",
-  "🎨 Design", "☕ Chill Talk", "📚 Anime", "🎬 Movies",
-  "💡 Startups", "🧘 Fitness"
+  "Coding", "Gaming", "Music", "AI & Tech",
+  "Design", "Chill Talk", "Anime", "Movies",
+  "Startups", "Fitness"
 ];
 
 export default function LandingPage({
@@ -39,9 +39,9 @@ export default function LandingPage({
 }) {
   // Interactive Live Demo states
   const [heroWidgetTab, setHeroWidgetTab] = useState("pass"); // "pass" | "mate"
-  const [selectedInterests, setSelectedInterests] = useState(["💻 Coding", "🎮 Gaming", "🚀 AI & Tech"]);
+  const [selectedInterests, setSelectedInterests] = useState(["Coding", "Gaming", "AI & Tech"]);
   const [simStep, setSimStep] = useState("idle"); // "idle" | "matching" | "matched" | "mutual"
-  const [simPartner, setSimPartner] = useState({ name: "Fox", emoji: "🦊", interests: "Gaming, Coding" });
+  const [simPartner, setSimPartner] = useState({ name: "Fox", initials: "FX", interests: "Gaming, Coding" });
   const [faqOpen, setFaqOpen] = useState(null);
 
   // Quick random guest generator
@@ -64,10 +64,10 @@ export default function LandingPage({
     setSimStep("matching");
     setTimeout(() => {
       const partners = [
-        { name: "Fox", emoji: "🦊", interests: "Coding, Gaming" },
-        { name: "Panda", emoji: "🐼", interests: "AI, Chill Talk" },
-        { name: "Wolf", emoji: "🐺", interests: "Gaming, Tech" },
-        { name: "Otter", emoji: "🦦", interests: "Design, Music" }
+        { name: "Fox", initials: "FX", interests: "Coding, Gaming" },
+        { name: "Panda", initials: "PD", interests: "AI, Chill Talk" },
+        { name: "Wolf", initials: "WF", interests: "Gaming, Tech" },
+        { name: "Otter", initials: "OT", interests: "Design, Music" }
       ];
       setSimPartner(partners[Math.floor(Math.random() * partners.length)]);
       setSimStep("matched");
@@ -147,55 +147,48 @@ export default function LandingPage({
 
       {/* ── HERO SECTION ── */}
       <section className="landing-hero-section">
-        <div className="landing-hero-backdrop" />
-        <div className="landing-hero-content">
-          <div className="landing-pill-badge">
-            <span className="landing-pill-dot" />
-            <MessageSquare size={13} />
-            <span>Simple real-time chat & anonymous matchmaking</span>
-          </div>
+        <div className="landing-hero-split">
+          <div className="landing-hero-copy">
+            <h1 className="landing-hero-title">
+              Real-time rooms and anonymous 1-on-1 matching
+            </h1>
 
-          <h1 className="landing-hero-title">
-            Connect Instantly. <br />
-            <span className="brand-gradient">Chat Freely.</span> Find Your Mate.
-          </h1>
+            <p className="landing-hero-subtitle">
+              Jump into public community rooms with zero setup via <strong>Instant Pass</strong>, or pair up anonymously with someone who shares your interests through <strong>Mate</strong>.
+            </p>
 
-          <p className="landing-hero-subtitle">
-            PairUP is your friction-free social hub. Jump into public community rooms with zero setup via <strong>Instant Pass</strong>, or pair up anonymously with someone who shares your passions through <strong>Mate</strong>.
-          </p>
-
-          <div className="landing-hero-actions">
-            {isLoggedIn ? (
-              <button type="button" className="landing-hero-cta-primary" onClick={onLaunchApp}>
-                <span>Open PairUP Chat Stage</span>
-                <ArrowRight size={18} />
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="landing-hero-cta-primary"
-                  onClick={() => {
-                    if (!demoUsername) handleRandomizeGuest();
-                    setShowAuthModal(true);
-                  }}
-                >
-                  <Zap size={18} />
-                  <span>Enter with Instant Pass (No Signup)</span>
+            <div className="landing-hero-actions">
+              {isLoggedIn ? (
+                <button type="button" className="landing-hero-cta-primary" onClick={onLaunchApp}>
+                  <span>Open PairUP Chat</span>
+                  <ArrowRight size={16} strokeWidth={1.5} />
                 </button>
-                <a href="#mate" className="landing-hero-cta-secondary">
-                  <Users size={17} />
-                  <span>Discover Mate Matchmaking</span>
-                </a>
-              </>
-            )}
-          </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="landing-hero-cta-primary"
+                    onClick={() => {
+                      if (!demoUsername) handleRandomizeGuest();
+                      setShowAuthModal(true);
+                    }}
+                  >
+                    <Zap size={16} strokeWidth={1.5} />
+                    <span>Enter with Instant Pass</span>
+                  </button>
+                  <a href="#mate" className="landing-hero-cta-secondary">
+                    <span>How Mate works</span>
+                    <ArrowRight size={16} strokeWidth={1.5} />
+                  </a>
+                </>
+              )}
+            </div>
 
-          <div className="landing-trust-strip">
-            <div className="trust-item"><CheckCircle2 size={15} /> 100% Free & Open</div>
-            <div className="trust-item"><CheckCircle2 size={15} /> No Email or Password Required</div>
-            <div className="trust-item"><CheckCircle2 size={15} /> Ephemeral & Privacy-First</div>
-            <div className="trust-item"><CheckCircle2 size={15} /> Real-Time WebSocket Delivery</div>
+            <div className="landing-trust-strip">
+              <div className="trust-item"><Check size={14} strokeWidth={1.5} /> Free to use</div>
+              <div className="trust-item"><Check size={14} strokeWidth={1.5} /> No email required</div>
+              <div className="trust-item"><Check size={14} strokeWidth={1.5} /> Ephemeral guest sessions</div>
+            </div>
           </div>
 
           {/* ── INTERACTIVE HERO WIDGET ── */}
@@ -207,32 +200,32 @@ export default function LandingPage({
                   className={`widget-tab ${heroWidgetTab === "pass" ? "active" : ""}`}
                   onClick={() => setHeroWidgetTab("pass")}
                 >
-                  <Zap size={15} /> Test Instant Pass
+                  <Zap size={15} strokeWidth={1.5} /> Instant Pass
                 </button>
                 <button
                   type="button"
                   className={`widget-tab ${heroWidgetTab === "mate" ? "active" : ""}`}
                   onClick={() => setHeroWidgetTab("mate")}
                 >
-                  <Users size={15} /> Mate Match Simulator
+                  <Users size={15} strokeWidth={1.5} /> Mate Simulator
                 </button>
               </div>
-              <span className="widget-live-tag">Interactive Preview</span>
+              <span className="widget-live-tag">Preview</span>
             </div>
 
             <div className="widget-body">
               {heroWidgetTab === "pass" ? (
                 <div className="widget-pass-flow">
                   <div className="widget-pass-description">
-                    <h4>Skip registration. Enter with a temporary guest pass.</h4>
-                    <p>Pick a handle or randomize one to join public rooms and direct chats immediately.</p>
+                    <h4>Enter with a temporary guest pass</h4>
+                    <p>Pick a handle or randomize one to join public rooms immediately.</p>
                   </div>
 
                   <form onSubmit={handleDemoLogin} className="widget-pass-form">
                     <div className="widget-input-group">
                       <input
                         type="text"
-                        placeholder="Choose Username (e.g. StarVoyager)"
+                        placeholder="Username (e.g. StarVoyager)"
                         value={demoUsername}
                         onChange={e => setDemoUsername(e.target.value)}
                         required
@@ -244,14 +237,14 @@ export default function LandingPage({
                         onClick={handleRandomizeGuest}
                         title="Randomize username"
                       >
-                        <RefreshCw size={14} /> Random
+                        <RefreshCw size={14} strokeWidth={1.5} /> Random
                       </button>
                     </div>
 
                     <div className="widget-form-row">
                       <input
                         type="text"
-                        placeholder="Display Name (optional)"
+                        placeholder="Display name (optional)"
                         value={demoName}
                         onChange={e => setDemoName(e.target.value)}
                         className="chat-input widget-input-sm"
@@ -269,7 +262,7 @@ export default function LandingPage({
                     </div>
 
                     <button type="submit" className="btn-primary widget-submit-btn">
-                      <Zap size={16} /> Enter Chat Immediately
+                      <Zap size={16} strokeWidth={1.5} /> Enter chat
                     </button>
                   </form>
                 </div>
@@ -278,8 +271,8 @@ export default function LandingPage({
                   {simStep === "idle" && (
                     <>
                       <div className="widget-mate-info">
-                        <h4>Pick your interests to find an anonymous mate:</h4>
-                        <p>PairUP pairs you with someone online who loves what you love.</p>
+                        <h4>Pick interests to find an anonymous mate</h4>
+                        <p>PairUP pairs you with someone online who shares your topics.</p>
                       </div>
                       <div className="widget-interest-chips">
                         {SAMPLE_INTERESTS.map(item => (
@@ -298,7 +291,7 @@ export default function LandingPage({
                         className="btn-primary widget-submit-btn"
                         onClick={handleRunSimulation}
                       >
-                        <Users size={16} /> Start Match Simulation
+                        <Users size={16} strokeWidth={1.5} /> Run match simulation
                       </button>
                     </>
                   )}
@@ -306,46 +299,48 @@ export default function LandingPage({
                   {simStep === "matching" && (
                     <div className="widget-sim-matching">
                       <div className="sim-pulse-spinner">
-                        <RefreshCw size={24} className="mate-spin-icon" />
+                        <RefreshCw size={22} strokeWidth={1.5} className="mate-spin-icon" />
                       </div>
-                      <h4>Matching your passions...</h4>
-                      <p>Searching for someone into {selectedInterests.slice(0, 2).join(" & ")}...</p>
+                      <h4>Matching your interests</h4>
+                      <p>Looking for someone into {selectedInterests.slice(0, 2).join(" & ")}</p>
                     </div>
                   )}
 
                   {simStep === "matched" && (
                     <div className="widget-sim-matched">
                       <div className="sim-avatar-pair">
-                        <div className="sim-avatar you">🐰 <span>You</span></div>
-                        <div className="sim-connector">⚡</div>
-                        <div className="sim-avatar partner">{simPartner.emoji} <span>{simPartner.name}</span></div>
+                        <div className="sim-avatar you"><span>You</span></div>
+                        <div className="sim-connector"><Zap size={16} strokeWidth={1.5} /></div>
+                        <div className="sim-avatar partner"><span>{simPartner.name}</span></div>
                       </div>
                       <div className="sim-chat-bubble">
-                        <strong>{simPartner.name}:</strong> "Hey there! Saw we both love {selectedInterests[0] || 'tech'}. Nice to pair up!"
+                        <strong>{simPartner.name}:</strong> "Hey, saw we both follow {selectedInterests[0] || 'tech'}. Good to pair up."
                       </div>
-                      <p className="sim-tip">Click below to secretly express interest!</p>
+                      <p className="sim-tip">Click below to express interest privately</p>
                       <button
                         type="button"
                         className="btn-interested active widget-heart-btn"
                         onClick={handleSimExpressInterest}
                       >
-                        <Heart size={16} fill="currentColor" /> Express Interest
+                        <Heart size={16} strokeWidth={1.5} fill="currentColor" /> Express interest
                       </button>
                     </div>
                   )}
 
                   {simStep === "mutual" && (
                     <div className="widget-sim-mutual">
-                      <div className="sim-mutual-badge">🎉 It's a Mutual Match!</div>
-                      <h3>You are now Friends on PairUP!</h3>
-                      <p>Both users expressed interest. Identities unlocked, direct messaging opened, and friends list updated!</p>
+                      <div className="sim-mutual-badge">
+                        <CheckCircle2 size={14} strokeWidth={1.5} /> Mutual match
+                      </div>
+                      <h3>You are now friends on PairUP</h3>
+                      <p>Both users expressed interest. Identities are unlocked and direct messaging is open.</p>
                       <button
                         type="button"
                         className="landing-btn-secondary"
                         style={{ marginTop: "12px" }}
                         onClick={() => setSimStep("idle")}
                       >
-                        Try Another Simulation
+                        Try another simulation
                       </button>
                     </div>
                   )}
@@ -426,20 +421,20 @@ export default function LandingPage({
 
           <div className="mate-step-card">
             <div className="mate-step-number">02</div>
-            <h4>Safe Animal Avatars</h4>
-            <p>Both users are assigned playful animal personas (🐰 Rabbit, 🐺 Wolf, 🐼 Panda, 🦊 Fox, 🐢 Turtle). No profile pics or biases.</p>
+            <h4>Anonymous animal personas</h4>
+            <p>Both users are assigned animal personas (Rabbit, Wolf, Panda, Fox, Turtle) with no profile photos until you match.</p>
           </div>
 
           <div className="mate-step-card">
             <div className="mate-step-number">03</div>
-            <h4>Real-Time 1-on-1 Chat</h4>
-            <p>Enjoy a distraction-free, 1-on-1 conversation feed with real-time typing indicators and zero clutter.</p>
+            <h4>Real-time 1-on-1 chat</h4>
+            <p>A focused 1-on-1 conversation feed with live typing indicators.</p>
           </div>
 
           <div className="mate-step-card">
             <div className="mate-step-number">04</div>
-            <h4>Secret "Interested" Match</h4>
-            <p>Hit the Heart button if you vibe. When interest is mutual, both profiles are revealed and you become permanent friends!</p>
+            <h4>Mutual interest unlock</h4>
+            <p>Click Interested if you want to stay in touch. When both agree, profiles are revealed and you become friends.</p>
           </div>
         </div>
       </section>
@@ -596,11 +591,11 @@ export default function LandingPage({
             },
             {
               q: "How does the Mate anonymous matchmaking system work?",
-              a: "Mate lets you enter interests like 'Coding' or 'Gaming' and joins a real-time queue. When an active user with similar interests is found, you are paired in a private anonymous chat under animal identities (e.g., Rabbit, Wolf). If both participants click 'Interested', profiles are exchanged and you become friends on PairUP!"
+              a: "Mate lets you enter interests like Coding or Gaming and join a live queue. When someone online with similar interests is found, you are paired in a private chat under animal names (e.g., Rabbit, Wolf). If both participants click Interested, profiles are exchanged and you become friends on PairUP."
             },
             {
               q: "Is PairUP completely free to use?",
-              a: "Yes! PairUP is 100% free. There are no paywalls, hidden subscriptions, or premium tiers for chatting, matching, or creating public rooms."
+              a: "Yes. PairUP is free with no paywalls or subscriptions for chatting, matching, or creating public rooms."
             },
             {
               q: "Can I create my own public chat room?",
@@ -638,8 +633,8 @@ export default function LandingPage({
       <section className="landing-cta-banner">
         <div className="cta-banner-glow" />
         <div className="cta-banner-content">
-          <h2>Ready to Pair Up?</h2>
-          <p>Join thousands of conversations happening right now. No signup required.</p>
+          <h2>Ready to start chatting</h2>
+          <p>Enter a public room or try anonymous Mate matching without creating an account.</p>
           <div className="cta-banner-actions">
             <button
               type="button"
@@ -649,7 +644,7 @@ export default function LandingPage({
                 setShowAuthModal(true);
               }}
             >
-              <Zap size={18} />
+              <Zap size={16} strokeWidth={1.5} />
               <span>Launch Instant Pass</span>
             </button>
             <button
@@ -657,7 +652,7 @@ export default function LandingPage({
               className="landing-btn-secondary"
               onClick={() => setShowAuthModal(true)}
             >
-              <LogIn size={16} /> Sign In with Google
+              <LogIn size={16} strokeWidth={1.5} /> Sign In with Google
             </button>
           </div>
         </div>
