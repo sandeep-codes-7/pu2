@@ -96,7 +96,8 @@ export default function LandingPage({
             <a href="#instant-pass" className="landing-nav-link">Instant Pass</a>
             <a href="#mate" className="landing-nav-link">Mate Match</a>
             <a href="#rooms" className="landing-nav-link">Public Rooms</a>
-            <a href="#features" className="landing-nav-link">Features</a>
+            <a href="/about" className="landing-nav-link">About</a>
+            <a href="/guidelines" className="landing-nav-link">Guidelines</a>
             <a href="#faq" className="landing-nav-link">FAQ</a>
           </nav>
 
@@ -680,7 +681,7 @@ export default function LandingPage({
               <li><a href="#instant-pass">Instant Pass (Guest)</a></li>
               <li><a href="#mate">Mate Matchmaking</a></li>
               <li><a href="#rooms">Public Chat Rooms</a></li>
-              <li><a href="#features">Unread Counter Badges</a></li>
+              <li><a href="/about">How PairUP Works</a></li>
             </ul>
           </div>
 
@@ -690,16 +691,18 @@ export default function LandingPage({
               <li><a href="#rooms">#general Room</a></li>
               <li><a href="#rooms">#developers Room</a></li>
               <li><a href="#rooms">#gaming Room</a></li>
-              <li><a href="#faq">FAQ & Support</a></li>
+              <li><a href="/guidelines">Community Guidelines</a></li>
+              <li><a href="#faq">FAQ &amp; Support</a></li>
             </ul>
           </div>
 
           <div className="footer-col">
-            <h5>Privacy & Terms</h5>
+            <h5>Privacy &amp; Terms</h5>
             <ul>
-              <li><span className="footer-static-link">Ephemeral Guest Data</span></li>
-              <li><span className="footer-static-link">Zero Trackers</span></li>
-              <li><span className="footer-static-link">Community Safety</span></li>
+              <li><a href="/about">About PairUP</a></li>
+              <li><a href="/privacy">Privacy Policy</a></li>
+              <li><a href="/terms">Terms of Service</a></li>
+              <li><a href="/guidelines">Safety Standards</a></li>
             </ul>
           </div>
         </div>
@@ -724,7 +727,7 @@ export default function LandingPage({
             </div>
 
             {loginNotice && (
-              <div className="error-banner" style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", marginBottom: "14px" }}>
+              <div className="error-banner" style={{ marginBottom: "14px" }}>
                 {loginNotice}
               </div>
             )}

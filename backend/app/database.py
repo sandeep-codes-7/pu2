@@ -69,6 +69,8 @@ async def init_db():
                         sync_conn.execute(text("ALTER TABLE users ADD COLUMN interests VARCHAR(300) DEFAULT 'Coding, Gaming, Tech'"))
                     if "provider" not in u_cols:
                         sync_conn.execute(text("ALTER TABLE users ADD COLUMN provider VARCHAR(50) DEFAULT 'google'"))
+                    if "is_ghost" not in u_cols:
+                        sync_conn.execute(text("ALTER TABLE users ADD COLUMN is_ghost BOOLEAN DEFAULT 0"))
 
                 # --- ROOM MODERATORS TABLE ---
                 m_rows = sync_conn.execute(text("PRAGMA table_info(room_moderators)")).fetchall()
@@ -96,6 +98,10 @@ async def init_db():
                         sync_conn.execute(text(f"ALTER TABLE rooms ADD COLUMN IF NOT EXISTS {col_name} {col_def}"))
                     except Exception:
                         pass
+                try:
+                    sync_conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_ghost BOOLEAN DEFAULT FALSE"))
+                except Exception:
+                    pass
 
         await conn.run_sync(migrate_schema)
 

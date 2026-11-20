@@ -2,6 +2,17 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 import LandingPage from './LandingPage.jsx';
 import {
+  buildChatKey,
+  getCachedMessages,
+  setCachedMessages,
+  appendCachedMessage,
+  deleteCachedMessages,
+  getCachedMeta,
+  setCachedMeta,
+  clearAllChatCache
+} from './utils/chatCache.js';
+import { syncAdSenseForView } from './utils/adsense.js';
+import {
   Hash, MessageSquare, Megaphone, Users, Send, Plus, LogOut, Search,
   UserPlus, Check, X, UserCheck, Clock, Shuffle, Edit3,
   Shield, ShieldPlus, ShieldOff, Trash2, Settings, Camera,
@@ -9,7 +20,7 @@ import {
   Heart, AlertCircle, CheckCircle2, Loader2, Flame,
   PanelLeftClose, PanelLeftOpen, ArrowLeft, Info, Sun, Moon,
   Bell, Lock, Globe, Copy, Share2, MoreVertical, Eraser, Construction, LogIn,
-  Star, MessageSquarePlus
+  Star, MessageSquarePlus, Ghost
 } from 'lucide-react';
 
 const API_BASE = window.location.origin.includes(":5173")
@@ -256,9 +267,23 @@ export default function App() {
   const [friendsForNewChat, setFriendsForNewChat] = useState([]);
   const [newChatSearch, setNewChatSearch] = useState("");
   const [isLoadingFriendsForChat, setIsLoadingFriendsForChat] = useState(false);
+  const [isTogglingGhost, setIsTogglingGhost] = useState(false);
 
   // System Maintenance Status
   const [maintenanceState, setMaintenanceState] = useState({ active: false, message: "" });
+
+  // Guard Google AdSense strictly to indexable public landing content (never on chat stages, empty lobbies, modals, or maintenance screens)
+  const isPublicEditorialView = Boolean(
+    !maintenanceState.active &&
+    (!token || !currentUser || showLandingPage) &&
+    !showAuthModal
+  );
+  useEffect(() => {
+    syncAdSenseForView({
+      isPublisherContent: isPublicEditorialView,
+      pathname: window.location.pathname
+    });
+  }, [isPublicEditorialView]);
 
   const pushNavState = useCallback((type) => {
     try {
@@ -510,6 +535,7 @@ export default function App() {
       try { await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }); } catch (e) { }
     }
     if (wsRef.current) wsRef.current.close();
+    clearAllChatCache();
     setToken("");
     setCurrentUser(null);
     localStorage.removeItem("pairup_token");
@@ -527,6 +553,7 @@ export default function App() {
     if (handlingExpiryRef.current) return;
     handlingExpiryRef.current = true;
     if (wsRef.current) wsRef.current.close();
+    clearAllChatCache();
     setToken("");
     setCurrentUser(null);
     localStorage.removeItem("pairup_token");
@@ -543,15 +570,36 @@ export default function App() {
   }, [showSnackbar]);
 
   // ──────────────────────────────────────────────────────────────
-  // DATA LOADERS
+  // DATA LOADERS & OFFLINE-FIRST CACHE HYDRATION
   // ──────────────────────────────────────────────────────────────
-  // DATA LOADERS & NOTIFICATIONS
-  // ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      const [cachedRooms, cachedDms] = await Promise.all([
+        getCachedMeta("rooms"),
+        getCachedMeta("directConversations")
+      ]);
+      if (cancelled) return;
+      if (Array.isArray(cachedRooms) && cachedRooms.length > 0) {
+        setRooms(prev => (prev.length === 0 ? cachedRooms : prev));
+      }
+      if (Array.isArray(cachedDms) && cachedDms.length > 0) {
+        setDirectConversations(prev => (prev.length === 0 ? cachedDms : prev));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
   const loadRooms = useCallback(async () => {
     try {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await fetch(`${API_BASE}/api/rooms`, { headers });
-      if (res.ok) setRooms(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setRooms(data);
+        setCachedMeta("rooms", data);
+      }
     } catch (e) { }
   }, [token]);
 
@@ -563,7 +611,11 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/direct-conversations`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.status === 401) { handleExpiredSession(); return; }
-      if (res.ok) setDirectConversations(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setDirectConversations(data);
+        setCachedMeta("directConversations", data);
+      }
     } catch (e) { }
   }, [token, handleExpiredSession]);
 
@@ -750,6 +802,9 @@ export default function App() {
             return next;
           });
         } else if (data.type === "room_message") {
+          if (data.room_slug) {
+            appendCachedMessage(buildChatKey("room", data.room_slug), data);
+          }
           setRooms(prev => {
             const roomSlug = data.room_slug?.toLowerCase();
             const idx = prev.findIndex(r => r.slug.toLowerCase() === roomSlug);
@@ -761,7 +816,9 @@ export default function App() {
               last_message_sender_name: data.sender_name,
               last_message_sender_id: data.sender_id
             };
-            return [target, ...prev.filter((_, i) => i !== idx)];
+            const next = [target, ...prev.filter((_, i) => i !== idx)];
+            setCachedMeta("rooms", next);
+            return next;
           });
           const state = activeChatStateRef.current;
           const isViewingThisRoom = state.viewMode === "chat" &&
@@ -790,6 +847,9 @@ export default function App() {
         } else if (data.type === "direct_message") {
           const state = activeChatStateRef.current;
           const partnerId = data.sender_id === state.currentUserId ? data.recipient_id : data.sender_id;
+          if (partnerId) {
+            appendCachedMessage(buildChatKey("direct", partnerId), data);
+          }
           setDirectConversations(prev => {
             const idx = prev.findIndex(u => u.id === partnerId);
             if (idx < 0) return prev;
@@ -799,7 +859,9 @@ export default function App() {
               last_message_at: data.created_at || new Date().toISOString(),
               last_message_sender_id: data.sender_id
             };
-            return [target, ...prev.filter((_, i) => i !== idx)];
+            const next = [target, ...prev.filter((_, i) => i !== idx)];
+            setCachedMeta("directConversations", next);
+            return next;
           });
           callbacksRef.current.refreshDirectConversations?.();
           const isViewingThisConvo = state.viewMode === "chat" &&
@@ -1129,7 +1191,6 @@ export default function App() {
     setRoomSettingsOpen(false);
     setViewingRoomInfo(null);
     setActiveTab({ type, id, data: dataObj });
-    setMessages([]);
 
     const unreadKey = `${type}_${type === "room" ? id?.toLowerCase() : id}`;
     setUnreadCounts(prev => {
@@ -1139,21 +1200,51 @@ export default function App() {
       return next;
     });
 
+    // Offline-first: immediately hydrate from L1 LRU / L2 IndexedDB cache
+    const chatKey = buildChatKey(type, id);
+    const cached = await getCachedMessages(chatKey);
+    if (cached && Array.isArray(cached.messages)) {
+      setMessages(cached.messages);
+    } else {
+      setMessages([]);
+    }
+
     if (type === "room") {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ action: "join_room", room_slug: id }));
+      }
+      // Skip redundant backend fetch when local cache is still fresh (WS keeps it live)
+      if (cached?.isFresh || (typeof navigator !== "undefined" && navigator.onLine === false)) {
+        return;
       }
       try {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const res = await fetch(`${API_BASE}/api/rooms/${id}/messages`, { headers });
         if (res.status === 401) { handleExpiredSession(); return; }
-        if (res.ok) setMessages(await res.json());
+        if (res.ok) {
+          const fresh = await res.json();
+          await setCachedMessages(chatKey, fresh);
+          const cur = activeChatStateRef.current.activeTab;
+          if (cur?.type === "room" && cur?.id?.toLowerCase() === id?.toLowerCase()) {
+            setMessages(fresh);
+          }
+        }
       } catch (e) { }
     } else {
+      if (cached?.isFresh || (typeof navigator !== "undefined" && navigator.onLine === false)) {
+        return;
+      }
       try {
         const res = await fetch(`${API_BASE}/api/direct/${id}/messages`, { headers: { Authorization: `Bearer ${token}` } });
         if (res.status === 401) { handleExpiredSession(); return; }
-        if (res.ok) setMessages(await res.json());
+        if (res.ok) {
+          const fresh = await res.json();
+          await setCachedMessages(chatKey, fresh);
+          const cur = activeChatStateRef.current.activeTab;
+          if (cur?.type === "direct" && cur?.id === id) {
+            setMessages(fresh);
+          }
+        }
       } catch (e) { }
     }
   };
@@ -1930,6 +2021,7 @@ export default function App() {
         });
         if (res.ok) {
           setMessages([]);
+          deleteCachedMessages(buildChatKey("direct", activeDirectUser.id));
           setChatMenuOpen(false);
           setDirectConversations(prev => prev.map(u => u.id === activeDirectUser.id ? {
             ...u,
@@ -1958,6 +2050,7 @@ export default function App() {
         });
         if (res.ok) {
           setMessages([]);
+          deleteCachedMessages(buildChatKey("room", activeRoom.slug));
           setChatMenuOpen(false);
           setRooms(prev => prev.map(r => r.slug === activeRoom.slug ? {
             ...r,
@@ -1986,6 +2079,7 @@ export default function App() {
       });
       if (res.ok) {
         setMessages([]);
+        deleteCachedMessages(buildChatKey("direct", activeDirectUser.id));
         setChatMenuOpen(false);
         setActiveTab({ type: "direct", id: null, data: null });
         refreshDirectConversations();
@@ -2061,6 +2155,58 @@ export default function App() {
     } catch (e) { }
     finally {
       setIsLoadingFriendsForChat(false);
+    }
+  };
+
+  const handleToggleGhostMode = async () => {
+    if (!currentUser || isTogglingGhost) return;
+    const prevGhost = Boolean(currentUser.is_ghost);
+    const nextGhost = !prevGhost;
+    setIsTogglingGhost(true);
+
+    // Optimistic update
+    const optimisticUser = { ...currentUser, is_ghost: nextGhost };
+    setCurrentUser(optimisticUser);
+    localStorage.setItem("pairup_user", JSON.stringify(optimisticUser));
+    setProfileData(prev => (prev && prev.user?.id === currentUser.id
+      ? { ...prev, user: { ...prev.user, is_ghost: nextGhost } }
+      : prev
+    ));
+
+    try {
+      const res = await fetch(`${API_BASE}/api/users/me`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ is_ghost: nextGhost })
+      });
+      if (res.status === 401) {
+        handleExpiredSession();
+        return;
+      }
+      if (!res.ok) throw new Error("Failed to update ghost mode");
+      const updated = await res.json();
+      setCurrentUser(updated);
+      localStorage.setItem("pairup_user", JSON.stringify(updated));
+      setProfileData(prev => (prev && prev.user?.id === updated.id
+        ? { ...prev, user: updated }
+        : prev
+      ));
+      showSnackbar(
+        nextGhost ? "Ghost mode on — appearing offline" : "Ghost mode off — appearing active",
+        "info"
+      );
+    } catch (e) {
+      // Revert on failure
+      const revertedUser = { ...currentUser, is_ghost: prevGhost };
+      setCurrentUser(revertedUser);
+      localStorage.setItem("pairup_user", JSON.stringify(revertedUser));
+      setProfileData(prev => (prev && prev.user?.id === currentUser.id
+        ? { ...prev, user: { ...prev.user, is_ghost: prevGhost } }
+        : prev
+      ));
+      showSnackbar("Could not update ghost mode", "error");
+    } finally {
+      setIsTogglingGhost(false);
     }
   };
 
@@ -2713,7 +2859,10 @@ export default function App() {
               <div className="profile-info" onClick={() => openUserProfile(currentUser.id, pendingRequestsCount > 0 ? "requests" : "profile")}>
                 <div className="user-avatar" style={{ position: "relative" }}>
                   <img src={avatarSrc(currentUser)} alt={currentUser.name} />
-                  <span className="status-dot online" />
+                  <span
+                    className={`status-dot ${currentUser?.is_ghost ? "offline" : "online"}`}
+                    title={currentUser?.is_ghost ? "Ghost mode (appearing offline)" : "Active"}
+                  />
                   {pendingRequestsCount > 0 && (
                     <span className="attention-blue-dot profile-dot" title="Attention required in profile" />
                   )}
@@ -2736,7 +2885,10 @@ export default function App() {
                 title={`Your Profile: ${currentUser.name} (@${currentUser.username})`}
               >
                 <img src={avatarSrc(currentUser)} alt={currentUser.name} />
-                <span className="status-dot online" />
+                <span
+                  className={`status-dot ${currentUser?.is_ghost ? "offline" : "online"}`}
+                  title={currentUser?.is_ghost ? "Ghost mode (appearing offline)" : "Active"}
+                />
                 {pendingRequestsCount > 0 && (
                   <span className="attention-blue-dot profile-dot" title="Attention required in profile" />
                 )}
@@ -2914,6 +3066,45 @@ export default function App() {
                           {profileData.user.bio || "No bio added yet."}
                         </div>
                       </div>
+
+                      {/* Ghost Mode Toggle (after Bio, own profile only) */}
+                      {viewingProfileId === currentUser.id && (() => {
+                        const isGhostActive = Boolean(currentUser?.is_ghost);
+                        return (
+                          <div className={`ghost-mode-card ${isGhostActive ? "active" : ""}`}>
+                            <div className="ghost-mode-left">
+                              <div className="ghost-mode-icon-box" aria-hidden="true">
+                                <Ghost size={16} strokeWidth={1.5} />
+                              </div>
+                              <div className="ghost-mode-copy">
+                                <div className="ghost-mode-title-row">
+                                  <span className="ghost-mode-title">Ghost mode</span>
+                                  <span className={`ghost-status-pill ${isGhostActive ? "offline" : "online"}`}>
+                                    <span className="ghost-status-dot" />
+                                    {isGhostActive ? "Offline" : "Active"}
+                                  </span>
+                                </div>
+                                <span className="ghost-mode-desc">
+                                  {isGhostActive
+                                    ? "Your profile appears offline to others while you chat"
+                                    : "Show as active when you are online"}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={isGhostActive}
+                              aria-label="Toggle ghost mode"
+                              disabled={isTogglingGhost}
+                              className={`ghost-switch ${isGhostActive ? "checked" : ""}`}
+                              onClick={handleToggleGhostMode}
+                            >
+                              <span className="ghost-switch-thumb" />
+                            </button>
+                          </div>
+                        );
+                      })()}
                       <div className="profile-field-group">
                         <span className="profile-field-label">Interests</span>
                         <div
@@ -3032,7 +3223,7 @@ export default function App() {
                               <div style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", flex: 1, overflow: "hidden" }} onClick={() => openUserProfile(f.id)}>
                                 <img src={avatarSrc(f)} alt={f.name} style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover" }} />
                                 <div style={{ overflow: "hidden" }}>
-                                  <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{f.name}</div>
+                                  <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--text-main)", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{f.name}</div>
                                   <div style={{ fontSize: "0.74rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{f.username}</div>
                                 </div>
                                 {/* {f.gender && (
@@ -3089,7 +3280,7 @@ export default function App() {
                                   <img src={avatarSrc(req.requester)} alt={req.requester.name} />
                                 </div>
                                 <div style={{ overflow: "hidden" }}>
-                                  <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                                  <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
                                     {req.requester.name}
                                   </div>
                                   <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
@@ -4099,7 +4290,7 @@ export default function App() {
           {mateConversationData?.mutual_interest && (
             <div className="mate-banner-mutual">
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <Heart size={20} color="#18181b" />
+                <Heart size={20} color="currentColor" />
                 <div>
                   <div style={{ fontWeight: 600, fontSize: "0.92rem", color: "var(--text-main)" }}>
                     Mutual Interest Confirmed
@@ -4303,7 +4494,7 @@ export default function App() {
                           <img src={avatarSrc(u)} alt={u.name} />
                         </div>
                         <div style={{ overflow: "hidden" }}>
-                          <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#fff" }}>{u.name}</div>
+                          <div style={{ fontWeight: 600, fontSize: "0.95rem", color: "var(--text-main)" }}>{u.name}</div>
                           <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
                         </div>
                       </div>

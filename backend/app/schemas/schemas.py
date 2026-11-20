@@ -30,6 +30,7 @@ class UserUpdate(BaseModel):
     gender: Optional[str] = None
     bio: Optional[str] = None
     interests: Optional[str] = None
+    is_ghost: Optional[bool] = None
 
 class UserOut(BaseModel):
     id: str
@@ -40,6 +41,7 @@ class UserOut(BaseModel):
     bio: Optional[str] = "Hey there! I am pairing up on PairUP."
     interests: Optional[str] = "Coding, Gaming, Tech"
     provider: Optional[str] = "google"
+    is_ghost: Optional[bool] = False
     created_at: datetime
     friendship_status: Optional[str] = None  # None, "pending_sent", "pending_received", "accepted"
     friend_request_id: Optional[str] = None

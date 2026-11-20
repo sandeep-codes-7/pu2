@@ -330,6 +330,10 @@ async def list_rooms(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
+    """
+    Optimized O(1) DB round-trip room listing using batch hash-map joins
+    instead of N+1 per-room queries.
+    """
     try:
         res = await db.execute(select(Room).order_by(Room.created_at.asc()))
         rooms = res.scalars().all()
@@ -337,14 +341,138 @@ async def list_rooms(
         print(f"[ERROR] Failed to query rooms: {e}")
         return []
 
-    result = []
+    if not rooms:
+        return []
+
     current_user_id = current_user.id if current_user else None
-    for room in rooms:
+    room_ids = [r.id for r in rooms]
+
+    # 1. Batch-fetch all moderators + users in ONE query -> hash map room_id -> list[ModeratorOut]
+    mods_by_room: dict[str, list[ModeratorOut]] = {rid: [] for rid in room_ids}
+    user_mod_rooms: set[str] = set()
+    try:
+        res_mods = await db.execute(
+            select(RoomModerator, User)
+            .outerjoin(User, RoomModerator.user_id == User.id)
+            .filter(RoomModerator.room_id.in_(room_ids))
+        )
+        for m, u in res_mods.all():
+            m.user = u
+            mods_by_room.setdefault(m.room_id, []).append(_moderator_out(m))
+            if current_user_id and m.user_id == current_user_id:
+                user_mod_rooms.add(m.room_id)
+    except Exception as e:
+        print(f"[WARN] Batch moderator load failed: {e}")
+
+    # 2. Batch-fetch current user's RoomMember set in ONE query -> O(1) membership lookup
+    member_room_ids: set[str] = set()
+    if current_user_id:
         try:
-            result.append(await _build_room_out(room, db, current_user_id))
-        except Exception as e:
-            print(f"[ERROR] Failed building room out for {getattr(room, 'slug', '')}: {e}")
-            continue
+            res_mem = await db.execute(
+                select(RoomMember.room_id).filter(
+                    RoomMember.room_id.in_(room_ids),
+                    RoomMember.user_id == current_user_id
+                )
+            )
+            member_room_ids = {row[0] for row in res_mem.all()}
+        except Exception:
+            pass
+
+    # 3. Batch-fetch pending admission counts for rooms moderated by current user -> GROUP BY
+    pending_by_room: dict[str, int] = {}
+    if user_mod_rooms:
+        try:
+            res_adm = await db.execute(
+                select(RoomAdmission.room_id, func.count(RoomAdmission.id))
+                .filter(
+                    RoomAdmission.room_id.in_(list(user_mod_rooms)),
+                    RoomAdmission.status == "pending"
+                )
+                .group_by(RoomAdmission.room_id)
+            )
+            pending_by_room = {rid: cnt for rid, cnt in res_adm.all()}
+        except Exception:
+            pass
+
+    # 4. Batch-fetch latest message per room via grouped subquery -> O(1) lookup per room
+    last_msg_by_room: dict[str, tuple] = {}
+    try:
+        latest_subq = (
+            select(Message.room_id, func.max(Message.created_at).label("max_ts"))
+            .filter(Message.room_id.in_(room_ids))
+            .group_by(Message.room_id)
+            .subquery()
+        )
+        res_last = await db.execute(
+            select(Message.room_id, Message.content, Message.created_at, Message.sender_id, User.name)
+            .join(
+                latest_subq,
+                and_(Message.room_id == latest_subq.c.room_id, Message.created_at == latest_subq.c.max_ts)
+            )
+            .outerjoin(User, Message.sender_id == User.id)
+        )
+        for rid, content, created_at, sender_id, sender_name in res_last.all():
+            if rid not in last_msg_by_room:
+                dt = created_at
+                if dt and dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                last_msg_by_room[rid] = (content, dt, sender_name, sender_id)
+    except Exception as e:
+        print(f"[WARN] Batch last-message load failed: {e}")
+
+    # Assemble RoomOut list in O(R)
+    result: List[RoomOut] = []
+    dirty_invites = False
+    for room in rooms:
+        is_private_room = bool(getattr(room, "is_private", False))
+        is_mod = room.id in user_mod_rooms
+        is_member = bool(
+            current_user_id and (
+                getattr(room, "creator_id", None) == current_user_id
+                or is_mod
+                or room.id in member_room_ids
+            )
+        )
+        invite_code = getattr(room, "invite_code", None)
+        if is_private_room and not invite_code:
+            room.invite_code = secrets.token_urlsafe(8)
+            invite_code = room.invite_code
+            dirty_invites = True
+
+        last_text = last_at = last_sender_name = last_sender_id = None
+        if (is_member or is_mod or not is_private_room) and room.id in last_msg_by_room:
+            last_text, last_at, last_sender_name, last_sender_id = last_msg_by_room[room.id]
+
+        room_created = getattr(room, "created_at", None) or datetime.utcnow()
+        if room_created and room_created.tzinfo is None:
+            room_created = room_created.replace(tzinfo=timezone.utc)
+
+        result.append(RoomOut(
+            id=str(room.id),
+            slug=room.slug,
+            title=room.title,
+            description=getattr(room, "description", None),
+            picture=getattr(room, "picture", None),
+            creator_id=getattr(room, "creator_id", None),
+            is_private=is_private_room,
+            invite_code=invite_code if (is_member or is_mod) else None,
+            online_count=len(hub.get_room_user_ids(room.slug)),
+            created_at=room_created,
+            moderators=mods_by_room.get(room.id, []),
+            is_member=is_member,
+            pending_admissions_count=pending_by_room.get(room.id, 0) if (is_mod and is_private_room) else 0,
+            last_message=last_text,
+            last_message_at=last_at,
+            last_message_sender_name=last_sender_name,
+            last_message_sender_id=last_sender_id
+        ))
+
+    if dirty_invites:
+        try:
+            await db.commit()
+        except Exception:
+            pass
+
     result.sort(
         key=lambda r: (
             r.last_message_at is not None,
@@ -1079,6 +1207,7 @@ async def list_direct_conversations(
             )
         )
         .order_by(Message.created_at.desc())
+        .limit(1000)
     )
     partner_last_info = {}
     for s_id, r_id, content, created_at in res.all():
@@ -1287,9 +1416,15 @@ async def update_my_profile(
         current_user.bio = payload.bio.strip()[:500]
     if payload.interests is not None:
         current_user.interests = payload.interests.strip()[:300]
+    ghost_changed = False
+    if payload.is_ghost is not None:
+        current_user.is_ghost = bool(payload.is_ghost)
+        ghost_changed = True
 
     await db.commit()
     await db.refresh(current_user)
+    if ghost_changed:
+        await hub.set_ghost_mode(current_user.id, bool(current_user.is_ghost))
     return current_user
 
 
@@ -1426,9 +1561,8 @@ async def get_notifications(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Returns action-required notifications:
-    - Incoming pending friend requests
-    - Incoming pending room admission requests for rooms moderated by current user
+    Optimized O(1) DB round-trip notifications loader using batch IN-queries
+    and hash-map lookups instead of N+1 queries.
     """
     items = []
 
@@ -1439,9 +1573,40 @@ async def get_notifications(
             Friendship.status == "pending"
         ).order_by(Friendship.created_at.desc())
     )
-    for f in res_f.scalars().all():
-        res_u = await db.execute(select(User).filter(User.id == f.requester_id))
-        u = res_u.scalars().first()
+    pending_friends = res_f.scalars().all()
+
+    # 2. Pending Room Admissions for Moderated Rooms
+    res_mods = await db.execute(
+        select(RoomModerator.room_id).filter(RoomModerator.user_id == current_user.id)
+    )
+    mod_room_ids = [row[0] for row in res_mods.all()]
+
+    pending_admissions = []
+    if mod_room_ids:
+        res_adms = await db.execute(
+            select(RoomAdmission).filter(
+                RoomAdmission.room_id.in_(mod_room_ids),
+                RoomAdmission.status == "pending"
+            ).order_by(RoomAdmission.created_at.desc())
+        )
+        pending_admissions = res_adms.scalars().all()
+
+    # Batch-fetch all referenced Users and Rooms in constant O(1) queries
+    user_ids = {f.requester_id for f in pending_friends} | {a.user_id for a in pending_admissions}
+    room_ids = {a.room_id for a in pending_admissions}
+
+    user_map = {}
+    if user_ids:
+        res_users = await db.execute(select(User).filter(User.id.in_(list(user_ids))))
+        user_map = {u.id: u for u in res_users.scalars().all()}
+
+    room_map = {}
+    if room_ids:
+        res_rooms = await db.execute(select(Room).filter(Room.id.in_(list(room_ids))))
+        room_map = {r.id: r for r in res_rooms.scalars().all()}
+
+    for f in pending_friends:
+        u = user_map.get(f.requester_id)
         if u:
             items.append(NotificationItem(
                 id=f"friend_{f.id}",
@@ -1456,40 +1621,25 @@ async def get_notifications(
                 created_at=f.created_at
             ))
 
-    # 2. Pending Room Admissions for Moderated Rooms
-    res_mods = await db.execute(
-        select(RoomModerator).filter(RoomModerator.user_id == current_user.id)
-    )
-    mod_room_ids = [m.room_id for m in res_mods.scalars().all()]
-    if mod_room_ids:
-        res_adms = await db.execute(
-            select(RoomAdmission).filter(
-                RoomAdmission.room_id.in_(mod_room_ids),
-                RoomAdmission.status == "pending"
-            ).order_by(RoomAdmission.created_at.desc())
-        )
-        for adm in res_adms.scalars().all():
-            res_r = await db.execute(select(Room).filter(Room.id == adm.room_id))
-            room = res_r.scalars().first()
-            res_u = await db.execute(select(User).filter(User.id == adm.user_id))
-            u = res_u.scalars().first()
-            if room and u:
-                items.append(NotificationItem(
-                    id=f"admission_{adm.id}",
-                    raw_id=adm.id,
-                    type="room_admission",
-                    title="Room Admission Request",
-                    description=f"{u.name} requested to join #{room.title}",
-                    avatar=u.avatar,
-                    user_id=u.id,
-                    user_name=u.name,
-                    user_username=u.username,
-                    room_slug=room.slug,
-                    room_title=room.title,
-                    created_at=adm.created_at
-                ))
+    for adm in pending_admissions:
+        room = room_map.get(adm.room_id)
+        u = user_map.get(adm.user_id)
+        if room and u:
+            items.append(NotificationItem(
+                id=f"admission_{adm.id}",
+                raw_id=adm.id,
+                type="room_admission",
+                title="Room Admission Request",
+                description=f"{u.name} requested to join #{room.title}",
+                avatar=u.avatar,
+                user_id=u.id,
+                user_name=u.name,
+                user_username=u.username,
+                room_slug=room.slug,
+                room_title=room.title,
+                created_at=adm.created_at
+            ))
 
-    # Sort items by date descending
     items.sort(key=lambda x: x.created_at, reverse=True)
 
     return NotificationListOut(
@@ -1567,8 +1717,11 @@ async def get_direct_messages(
         select(Message, User)
         .join(User, Message.sender_id == User.id)
         .filter(
-            ((Message.sender_id == current_user.id) & (Message.recipient_id == recipient_id)) |
-            ((Message.sender_id == recipient_id) & (Message.recipient_id == current_user.id))
+            Message.room_id.is_(None),
+            (
+                ((Message.sender_id == current_user.id) & (Message.recipient_id == recipient_id)) |
+                ((Message.sender_id == recipient_id) & (Message.recipient_id == current_user.id))
+            )
         )
         .order_by(Message.created_at.desc())
         .limit(limit)

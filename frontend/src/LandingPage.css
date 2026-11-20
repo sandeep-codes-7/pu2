@@ -1419,6 +1419,17 @@
   color: #ffffff;
 }
 
+[data-theme="dark"] .landing-cta-btn {
+  background: #ededed !important;
+  color: #141415 !important;
+  border-color: #ededed !important;
+}
+
+[data-theme="dark"] .landing-cta-btn:hover {
+  background: #ffffff !important;
+  border-color: #ffffff !important;
+}
+
 [data-theme="dark"] .landing-hero-cta-primary {
   background: #ffffff;
   color: #09090b;
@@ -1466,17 +1477,67 @@
 }
 
 [data-theme="dark"] .widget-tab {
+  background: #18181b;
+  border-color: #27272a;
   color: #a1a1aa;
 }
 
 [data-theme="dark"] .widget-tab:hover {
+  background: #222226;
   color: #ffffff;
 }
 
 [data-theme="dark"] .widget-tab.active {
-  background: #27272a;
+  background: #ededed;
+  border-color: #ededed;
+  color: #141415;
+}
+
+[data-theme="dark"] .widget-random-btn {
+  background: #232325;
+  border-color: rgba(237, 237, 237, 0.12);
+  color: #ededed;
+}
+
+[data-theme="dark"] .widget-random-btn:hover {
+  background: #2c2c2f;
+  border-color: rgba(237, 237, 237, 0.22);
+}
+
+[data-theme="dark"] .sim-pulse-spinner {
+  background: #232325;
   border-color: #3f3f46;
-  color: #ffffff;
+  color: #ededed;
+}
+
+[data-theme="dark"] .widget-sim-matching h4,
+[data-theme="dark"] .widget-sim-mutual h3 {
+  color: #ededed;
+}
+
+[data-theme="dark"] .widget-sim-matching p,
+[data-theme="dark"] .widget-sim-mutual p,
+[data-theme="dark"] .sim-tip,
+[data-theme="dark"] .sim-avatar span {
+  color: #a1a1aa;
+}
+
+[data-theme="dark"] .sim-chat-bubble {
+  background: #232325;
+  border-color: rgba(237, 237, 237, 0.1);
+  color: #ededed;
+}
+
+[data-theme="dark"] .widget-heart-btn {
+  background: #ededed !important;
+  color: #141415 !important;
+  border-color: #ededed !important;
+}
+
+[data-theme="dark"] .sim-mutual-badge {
+  background: rgba(76, 195, 138, 0.14);
+  border-color: rgba(76, 195, 138, 0.3);
+  color: #86efac;
 }
 
 [data-theme="dark"] .widget-live-tag {
@@ -1604,7 +1665,46 @@
 }
 
 [data-theme="dark"] .landing-footer {
-  background: #09090b;
+  background: #0f0f10;
   border-top-color: #27272a;
+}
+
+[data-theme="dark"] .mate-step-number {
+  color: #3f3f46;
+}
+
+[data-theme="dark"] .room-preview-icon {
+  background: #18181b;
+  border-color: #27272a;
+  color: #ededed;
+}
+
+[data-theme="dark"] .room-tag {
+  background: #1c1c20;
+  border-color: #27272a;
+  color: #a1a1aa;
+}
+
+[data-theme="dark"] .highlight-item {
+  background: #18181b;
+  border-color: #27272a;
+  color: #a1a1aa;
+}
+
+[data-theme="dark"] .tag-green {
+  color: #4cc38a;
+}
+
+[data-theme="dark"] .footer-col h5 {
+  color: #ededed;
+}
+
+[data-theme="dark"] .footer-col a,
+[data-theme="dark"] .footer-static-link {
+  color: #a1a1aa;
+}
+
+[data-theme="dark"] .footer-col a:hover {
+  color: #ededed;
 }
 

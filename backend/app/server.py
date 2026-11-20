@@ -10,8 +10,12 @@ if current_dir.name == "app":
         sys.path.insert(0, str(backend_root))
 
 from contextlib import asynccontextmanager
+from collections import defaultdict, deque
+import hmac
+import secrets
+import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, Depends, status
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.future import select
 import uvicorn
@@ -66,19 +70,113 @@ app.add_middleware(
     allow_origins=list(_allowed_origins),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-CSRF-Token"],
 )
+
+CSRF_COOKIE_NAME = "pairup_csrf"
+CSRF_HEADER_NAME = "x-csrf-token"
+_STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+# O(1) amortized sliding-window rate limiter using collections.deque
+_RATE_BUCKETS: dict[str, deque] = defaultdict(deque)
+_MAX_RATE_KEYS = 10000
+
+
+def _check_rate_limit(key: str, max_requests: int, window_sec: float = 60.0) -> bool:
+    now = time.monotonic()
+    if len(_RATE_BUCKETS) > _MAX_RATE_KEYS:
+        # Evict oldest idle buckets to bound memory
+        stale = [k for k, dq in _RATE_BUCKETS.items() if not dq or (now - dq[-1]) > window_sec]
+        for k in stale[:2000]:
+            _RATE_BUCKETS.pop(k, None)
+    bucket = _RATE_BUCKETS[key]
+    cutoff = now - window_sec
+    while bucket and bucket[0] < cutoff:
+        bucket.popleft()
+    if len(bucket) >= max_requests:
+        return False
+    bucket.append(now)
+    return True
+
+
+def _get_client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 @app.middleware("http")
-async def add_security_headers(request: Request, call_next):
+async def security_and_csrf_middleware(request: Request, call_next):
+    path = request.url.path
+    method = request.method.upper()
+
+    # 1. Sliding-window rate limiting on sensitive & mutating /api/ routes
+    if path.startswith("/api/") and method in _STATE_CHANGING_METHODS:
+        client_ip = _get_client_ip(request)
+        if path.startswith("/api/auth/"):
+            allowed = _check_rate_limit(f"auth:{client_ip}", max_requests=25, window_sec=60.0)
+        elif path.startswith("/api/upload/"):
+            allowed = _check_rate_limit(f"upload:{client_ip}", max_requests=15, window_sec=60.0)
+        else:
+            allowed = _check_rate_limit(f"mut:{client_ip}", max_requests=120, window_sec=60.0)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please slow down and try again shortly."}
+            )
+
+    # 2. Double-Submit Cookie CSRF protection on state-changing /api/ requests
+    csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
+    if path.startswith("/api/") and method in _STATE_CHANGING_METHODS:
+        csrf_header = request.headers.get(CSRF_HEADER_NAME)
+        if not csrf_cookie or not csrf_header or not hmac.compare_digest(csrf_cookie, csrf_header):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "CSRF token missing or invalid. Please refresh and try again."}
+            )
+
     response = await call_next(request)
+
+    # Ensure a CSRF cookie is issued on safe requests if not already set
+    if method == "GET" and not csrf_cookie and path.startswith("/api/"):
+        new_csrf = secrets.token_urlsafe(32)
+        response.set_cookie(
+            key=CSRF_COOKIE_NAME,
+            value=new_csrf,
+            httponly=False,
+            samesite="lax",
+            secure=is_prod,
+            path="/",
+            max_age=60 * 60 * 24 * 7,
+        )
+
+    # 3. Security Headers
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["X-XSS-Protection"] = "1; mode=block"
+    if is_prod:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
+
+@app.get("/api/csrf-token")
+def get_csrf_token(request: Request):
+    """Issues or echoes the Double-Submit CSRF token cookie for the frontend."""
+    token_val = request.cookies.get(CSRF_COOKIE_NAME) or secrets.token_urlsafe(32)
+    resp = JSONResponse({"csrf_token": token_val})
+    resp.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=token_val,
+        httponly=False,
+        samesite="lax",
+        secure=is_prod,
+        path="/",
+        max_age=60 * 60 * 24 * 7,
+    )
+    return resp
 
 
 # Include Routers
@@ -102,9 +200,33 @@ def serve_sitemap():
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://pairup.cc/</loc>
-    <lastmod>2026-10-30</lastmod>
+    <lastmod>2026-11-20</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://pairup.cc/about</loc>
+    <lastmod>2026-11-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pairup.cc/guidelines</loc>
+    <lastmod>2026-11-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pairup.cc/privacy</loc>
+    <lastmod>2026-11-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://pairup.cc/terms</loc>
+    <lastmod>2026-11-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
   </url>
 </urlset>"""
     return Response(content=xml_content, media_type="application/xml")
@@ -114,6 +236,12 @@ def serve_sitemap():
 def serve_robots():
     robots_content = "User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n\nSitemap: https://pairup.cc/sitemap.xml\n"
     return Response(content=robots_content, media_type="text/plain")
+
+
+@app.get("/ads.txt", include_in_schema=False)
+def serve_ads_txt():
+    ads_content = "google.com, pub-4647904494238513, DIRECT, f08c47fec0942fa0\n"
+    return Response(content=ads_content, media_type="text/plain")
 
 @app.get("/api/presence")
 def get_presence(_current_user: User = Depends(get_current_user)):
@@ -126,6 +254,15 @@ async def websocket_gateway(
     websocket: WebSocket,
     token: str = Query(...)
 ):
+    # Cross-Site WebSocket Hijacking (CSWSH) Origin validation
+    origin = (websocket.headers.get("origin") or "").rstrip("/")
+    host = websocket.headers.get("host") or ""
+    if origin:
+        same_host_origins = {f"http://{host}", f"https://{host}"} if host else set()
+        if origin not in _allowed_origins and origin not in same_host_origins:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
     async with AsyncSessionLocal() as db:
         user = await get_user_from_token_string(token, db)
         if not user:
@@ -138,7 +275,8 @@ async def websocket_gateway(
             "username": user.username,
             "avatar": user.avatar,
             "gender": user.gender or "Prefer not to say",
-            "provider": user.provider
+            "provider": user.provider,
+            "is_ghost": bool(getattr(user, "is_ghost", False))
         }
 
     # Register to Hub

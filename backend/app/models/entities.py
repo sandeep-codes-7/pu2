@@ -16,6 +16,7 @@ class User(Base):
     bio = Column(String(500), default="Hey there! I am pairing up on PairUP.")
     interests = Column(String(300), default="Coding, Gaming, Tech")
     provider = Column(String(50), default="google")  # google or demo
+    is_ghost = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

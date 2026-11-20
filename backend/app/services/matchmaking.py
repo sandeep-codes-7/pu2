@@ -99,7 +99,7 @@ async def find_or_enqueue_match(
             "message": "You are already in an active Mate conversation"
         }
 
-    # 3. Query other active queue entries
+    # 3. Query other active queue entries + batch-load busy user IDs into a hash set (O(1) lookup)
     now = datetime.utcnow()
     stmt = select(MateQueue).filter(
         MateQueue.user_id != user_id,
@@ -108,11 +108,27 @@ async def find_or_enqueue_match(
     res = await db.execute(stmt)
     queue_entries = res.scalars().all()
 
-    candidates = []
+    busy_user_ids = set()
+    if queue_entries:
+        cand_ids = [e.user_id for e in queue_entries]
+        res_busy = await db.execute(
+            select(MateParticipant.user_id)
+            .join(MateConversation, MateConversation.id == MateParticipant.conversation_id)
+            .filter(
+                MateParticipant.user_id.in_(cand_ids),
+                MateParticipant.has_left == False,
+                MateConversation.status == "active"
+            )
+        )
+        busy_user_ids = {row[0] for row in res_busy.all()}
+
+    # Single-pass O(Q) selection of best candidate (higher Jaccard similarity, then older queue entry)
+    my_interest_set = set(normalized)
+    best_candidate = None
+    best_key = None  # tuple (score, -created_at_timestamp)
+
     for entry in queue_entries:
-        # Verify candidate is not already in an active conversation
-        cand_active = await get_active_user_mate_conversation(entry.user_id, db)
-        if cand_active:
+        if entry.user_id in busy_user_ids:
             continue
 
         try:
@@ -120,13 +136,18 @@ async def find_or_enqueue_match(
         except Exception:
             cand_interests = []
 
-        score = calculate_jaccard_similarity(normalized, cand_interests)
-        candidates.append((score, entry.created_at, entry))
+        cand_set = set(cand_interests)
+        union_len = len(my_interest_set | cand_set)
+        score = (len(my_interest_set & cand_set) / union_len) if union_len else 0.0
+        ts = entry.created_at.timestamp() if entry.created_at else 0.0
+        cand_key = (score, -ts)
 
-    if candidates:
-        # Sort by similarity score descending, then queue age ascending (older first)
-        candidates.sort(key=lambda c: (-c[0], c[1]))
-        best_score, _, best_candidate = candidates[0]
+        if best_key is None or cand_key > best_key:
+            best_key = cand_key
+            best_candidate = entry
+
+    if best_candidate is not None:
+        best_score = best_key[0]
 
         # Atomically remove both users from queue
         await db.execute(

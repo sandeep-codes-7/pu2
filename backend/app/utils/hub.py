@@ -16,32 +16,62 @@ class HubConnectionManager:
         self.socket_users: Dict[WebSocket, Dict[str, Any]] = {}
         # room_slug -> set of active WebSockets in that room
         self.room_sockets: Dict[str, Set[WebSocket]] = {}
+        # user_ids currently in ghost mode (appear offline to others)
+        self.ghost_users: Set[str] = set()
 
     def get_online_user_ids(self) -> Set[str]:
-        return set(self.user_sockets.keys())
+        return set(self.user_sockets.keys()) - self.ghost_users
 
     def get_room_online_count(self, room_slug: str) -> int:
-        return len(self.room_sockets.get(room_slug.lower(), set()))
+        return len(self.get_room_user_ids(room_slug))
 
     def get_room_user_ids(self, room_slug: str) -> Set[str]:
         sockets = self.room_sockets.get(room_slug.lower(), set())
-        return {self.socket_users[ws]["id"] for ws in sockets if ws in self.socket_users and "id" in self.socket_users[ws]}
+        return {
+            self.socket_users[ws]["id"]
+            for ws in sockets
+            if ws in self.socket_users
+            and "id" in self.socket_users[ws]
+            and self.socket_users[ws]["id"] not in self.ghost_users
+        }
+
+    async def set_ghost_mode(self, user_id: str, is_ghost: bool):
+        if is_ghost:
+            self.ghost_users.add(user_id)
+            await self.broadcast_global({
+                "type": "user_status",
+                "user_id": user_id,
+                "status": "offline"
+            })
+        else:
+            self.ghost_users.discard(user_id)
+            if user_id in self.user_sockets:
+                await self.broadcast_global({
+                    "type": "user_status",
+                    "user_id": user_id,
+                    "status": "online"
+                })
 
     async def register(self, websocket: WebSocket, user_info: Dict[str, Any]):
         await websocket.accept()
         user_id = user_info["id"]
-        
+        is_ghost = bool(user_info.get("is_ghost", False))
+
         self.socket_users[websocket] = user_info
         if user_id not in self.user_sockets:
             self.user_sockets[user_id] = set()
         self.user_sockets[user_id].add(websocket)
 
-        # Notify others that this user is online
-        await self.broadcast_global({
-            "type": "user_status",
-            "user_id": user_id,
-            "status": "online"
-        }, exclude_ws=websocket)
+        if is_ghost:
+            self.ghost_users.add(user_id)
+        else:
+            self.ghost_users.discard(user_id)
+            # Notify others that this user is online
+            await self.broadcast_global({
+                "type": "user_status",
+                "user_id": user_id,
+                "status": "online"
+            }, exclude_ws=websocket)
 
     def unregister(self, websocket: WebSocket) -> Optional[Dict[str, Any]]:
         user_info = self.socket_users.pop(websocket, None)
@@ -53,6 +83,7 @@ class HubConnectionManager:
             self.user_sockets[user_id].discard(websocket)
             if not self.user_sockets[user_id]:
                 del self.user_sockets[user_id]
+                self.ghost_users.discard(user_id)
                 # User has zero open tabs/connections: mark offline
                 return user_info
 
