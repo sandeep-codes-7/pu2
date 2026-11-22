@@ -1,5 +1,6 @@
 import React from 'react';
 import './LandingPage.css';
+import MonochromeBackground from './components/MonochromeBackground.jsx';
 import {
   Zap, Hash, Shuffle, ArrowRight, RefreshCw, Sun, Moon
 } from 'lucide-react';
@@ -32,6 +33,8 @@ export default function LandingPage({
 
   return (
     <div className="lp-shell">
+      <MonochromeBackground theme={theme === "dark" ? "dark" : "light"} density={0.95} speed={0.85} />
+
       {/* Quiet Top Bar */}
       <header className="lp-header">
         <div className="lp-header-inner">

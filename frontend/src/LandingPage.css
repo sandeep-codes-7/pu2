@@ -4,12 +4,13 @@
    ========================================================================== */
 
 .lp-shell {
+  position: relative;
   width: 100%;
   height: 100%;
   height: 100dvh;
   overflow-y: auto;
   overflow-x: hidden;
-  background-color: var(--bg-deep);
+  background-color: transparent;
   color: var(--text-main);
   font-family: var(--font-body);
   display: flex;
@@ -19,10 +20,18 @@
 
 /* ── Top Bar ── */
 .lp-header {
+  position: relative;
+  z-index: 1;
   width: 100%;
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-deep);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   flex-shrink: 0;
+}
+
+[data-theme="dark"] .lp-header {
+  background: rgba(10, 10, 10, 0.72);
 }
 
 .lp-header-inner {
@@ -110,6 +119,8 @@
 
 /* ── Main Centered Split ── */
 .lp-main {
+  position: relative;
+  z-index: 1;
   flex: 1;
   display: flex;
   align-items: center;
@@ -426,10 +437,18 @@
 
 /* ── Slim Footer ── */
 .lp-footer {
+  position: relative;
+  z-index: 1;
   width: 100%;
   border-top: 1px solid var(--border-subtle);
-  background: var(--bg-deep);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   flex-shrink: 0;
+}
+
+[data-theme="dark"] .lp-footer {
+  background: rgba(10, 10, 10, 0.72);
 }
 
 .lp-footer-inner {

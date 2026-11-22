@@ -4580,12 +4580,62 @@ export default function App() {
               return (
                 <div className="explore-grid">
                   {displayedExploreUsers.length === 0 ? (
-                    <div style={{ gridColumn: "1/-1", textAlign: "center", color: "var(--text-dim)", padding: "40px 0" }}>
-                      {exploreFilter === "friends"
-                        ? "You haven't added any friends yet. Check Recommendations or search above to connect."
-                        : searchQuery
-                          ? `No users found for "${searchQuery}"`
-                          : "No recommendations yet. Join a room and chat with people to see friend recommendations here."}
+                    <div className="explore-empty-card">
+                      {exploreFilter === "friends" ? (
+                        <>
+                          <div className="explore-empty-icon"><UserCheck size={20} strokeWidth={1.5} /></div>
+                          <h4>No friends yet</h4>
+                          <p>Check Recommendations, join a public room, or try Mate matching to connect with people.</p>
+                          <div className="explore-empty-actions">
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              onClick={() => { clearOverlayViews(); pushNavState("announcements"); setViewMode("announcements"); setAnnouncementsTab("rooms"); }}
+                            >
+                              <Hash size={15} strokeWidth={1.5} />
+                              <span>Explore rooms</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              onClick={() => { pushNavState("mate"); handleNavigateMate(); }}
+                            >
+                              <Shuffle size={15} strokeWidth={1.5} />
+                              <span>Try Mate</span>
+                            </button>
+                          </div>
+                        </>
+                      ) : searchQuery ? (
+                        <>
+                          <div className="explore-empty-icon"><Search size={20} strokeWidth={1.5} /></div>
+                          <h4>No users found for &ldquo;{searchQuery}&rdquo;</h4>
+                          <p>Try a different username or display name, or discover people in public rooms.</p>
+                        </>
+                      ) : (
+                        <>
+                          <div className="explore-empty-icon"><Users size={20} strokeWidth={1.5} /></div>
+                          <h4>No recommendations yet</h4>
+                          <p>Recommendations appear once you join rooms, chat with members, or build mutual connections. Start by exploring public rooms or pairing up in Mate.</p>
+                          <div className="explore-empty-actions">
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              onClick={() => { clearOverlayViews(); pushNavState("announcements"); setViewMode("announcements"); setAnnouncementsTab("rooms"); }}
+                            >
+                              <Hash size={15} strokeWidth={1.5} />
+                              <span>Explore rooms</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              onClick={() => { pushNavState("mate"); handleNavigateMate(); }}
+                            >
+                              <Shuffle size={15} strokeWidth={1.5} />
+                              <span>Try Mate</span>
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ) : displayedExploreUsers.map(u => (
                     <div key={u.id} className="user-card">

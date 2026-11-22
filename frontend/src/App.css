@@ -5049,3 +5049,166 @@ span.desktop-only {
   flex: 1;
   justify-content: center;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   EXPLORE EMPTY RECOMMENDATIONS CARD & GLOBAL MOBILE RESPONSIVENESS
+   ═══════════════════════════════════════════════════════════════ */
+.explore-empty-card {
+  grid-column: 1 / -1;
+  max-width: 460px;
+  width: 100%;
+  margin: 24px auto;
+  padding: 28px 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.explore-empty-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.explore-empty-card h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.explore-empty-card p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  max-width: 380px;
+}
+
+.explore-empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .page-stage,
+  .chat-stage,
+  .mate-stage,
+  .announcements-stage {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .page-header {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .page-content-scroll {
+    padding: 16px 14px calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .page-card {
+    padding: 16px;
+    border-radius: var(--radius-md);
+  }
+
+  .profile-tabs,
+  .settings-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .profile-tabs::-webkit-scrollbar,
+  .settings-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .profile-tab-btn,
+  .settings-tab {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .explore-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .explore-filter-toggle {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .explore-filter-toggle .toggle-pill-btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .mate-page-card {
+    padding: 20px 16px;
+  }
+
+  .mate-banner-mutual,
+  .mate-banner-left {
+    flex-direction: column;
+    align-items: flex-start;
+    margin: 10px 12px 0;
+    padding: 12px 14px;
+  }
+
+  .room-info-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+}
+
+@media (max-width: 540px) {
+  .explore-grid,
+  .rooms-discovery-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .ghost-mode-card {
+    align-items: flex-start;
+  }
+
+  .explore-empty-actions {
+    flex-direction: column;
+  }
+
+  .explore-empty-actions button {
+    width: 100%;
+  }
+
+  .instant-pass-warning-actions {
+    flex-direction: column-reverse;
+  }
+}
