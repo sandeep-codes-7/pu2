@@ -877,13 +877,13 @@ export default function App() {
             setMessages(prev => prev.map(m =>
               m.sender_id === guestId
                 ? {
-                    ...m,
-                    sender_id: null,
-                    sender_name: "Guest User",
-                    sender_username: "guest",
-                    sender_avatar: null,
-                    is_guest_deleted: true
-                  }
+                  ...m,
+                  sender_id: null,
+                  sender_name: "Guest User",
+                  sender_username: "guest",
+                  sender_avatar: null,
+                  is_guest_deleted: true
+                }
                 : m
             ));
             setRooms(prev => prev.map(r =>
@@ -3976,7 +3976,7 @@ export default function App() {
                       onClick={() => handleCopyInviteLink(viewingRoomInfo)}
                     >
                       {hasCopiedInvite ? <Check size={14} /> : <Copy size={14} />}
-                      <span>{hasCopiedInvite ? "Copied" : "Copy Link"}</span>
+                      <span>{hasCopiedInvite ? "Copied" : "Copy"}</span>
                     </button>
                   </div>
                 </div>
@@ -4056,11 +4056,11 @@ export default function App() {
                           <div className="room-info-user-meta">
                             <div className="room-info-user-name">
                               {user.name}
-                              {user.gender && (
+                              {/* {user.gender && (
                                 <span className={getGenderBadgeClass(user.gender)} style={{ fontSize: "0.6rem", padding: "1px 5px", marginLeft: "6px" }}>
                                   {user.gender}
                                 </span>
-                              )}
+                              )} */}
                             </div>
                             <div className="room-info-user-handle">@{user.username}</div>
                           </div>
