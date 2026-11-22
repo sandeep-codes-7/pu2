@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import update
 import re
 import uuid
 
 from app.database import get_db
-from app.models.entities import User
+from app.models.entities import User, Message
+from app.utils.hub import hub
 from app.schemas.schemas import GoogleAuthRequest, DemoLoginRequest, Token, UserOut
 from app.services.auth_service import verify_google_id_token, exchange_google_code, create_access_token
 from app.dependencies.auth import get_current_user
@@ -131,9 +133,22 @@ async def logout(current_user: User = Depends(get_current_user), db: AsyncSessio
     all their data (messages, account) is wiped out upon leaving.
     """
     if current_user.provider == "demo":
+        guest_id = current_user.id
+        try:
+            await db.execute(
+                update(Message)
+                .where(Message.sender_id == guest_id, Message.room_id.isnot(None))
+                .values(sender_id=None)
+            )
+        except Exception:
+            pass
         await db.delete(current_user)
         await db.commit()
-        return {"status": "guest_purged", "message": "Instant Pass session and data removed"}
+        await hub.broadcast_global({
+            "type": "guest_purged",
+            "user_id": guest_id
+        })
+        return {"status": "guest_purged", "message": "Instant Pass session removed; room messages anonymized"}
     return {"status": "ok", "message": "Logged out successfully"}
 
 @router.get("/me", response_model=UserOut)

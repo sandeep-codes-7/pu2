@@ -442,6 +442,8 @@ async def list_rooms(
         last_text = last_at = last_sender_name = last_sender_id = None
         if (is_member or is_mod or not is_private_room) and room.id in last_msg_by_room:
             last_text, last_at, last_sender_name, last_sender_id = last_msg_by_room[room.id]
+            if last_text is not None and not last_sender_name:
+                last_sender_name = "Guest User"
 
         room_created = getattr(room, "created_at", None) or datetime.utcnow()
         if room_created and room_created.tzinfo is None:
@@ -489,6 +491,28 @@ async def create_room(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if current_user.provider == "demo":
+        raise HTTPException(
+            status_code=403,
+            detail="Instant Pass users cannot create rooms. Sign in with Google and connect with more than 5 friends to create rooms."
+        )
+
+    res_fc = await db.execute(
+        select(func.count(Friendship.id)).filter(
+            Friendship.status == "accepted",
+            or_(
+                Friendship.requester_id == current_user.id,
+                Friendship.addressee_id == current_user.id
+            )
+        )
+    )
+    friends_count = res_fc.scalar() or 0
+    if friends_count <= 5:
+        raise HTTPException(
+            status_code=403,
+            detail=f"You need more than 5 friends to create a room (you currently have {friends_count})."
+        )
+
     slug = re.sub(r"[^a-zA-Z0-9_-]", "", payload.slug.lower())
     if not slug:
         raise HTTPException(status_code=400, detail="Invalid room slug")
@@ -1258,21 +1282,13 @@ async def explore_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Explore section: returns registered users excluding current user with friendship status."""
-    stmt = select(User).filter(User.id != current_user.id)
-    if query and query.strip():
-        q_clean = f"%{query.strip().lower()}%"
-        stmt = stmt.filter(
-            or_(
-                User.username.ilike(q_clean),
-                User.name.ilike(q_clean)
-            )
-        )
-    stmt = stmt.order_by(User.name.asc()).limit(50)
-    res = await db.execute(stmt)
-    users = res.scalars().all()
-
-    # Get friendship links for current_user
+    """
+    Explore & Recommendations:
+    - Without query: recommends users who recently interacted in rooms shared with current_user,
+      followed by all other users in common rooms (plus accepted friends for the My Friends tab).
+    - With query: searches registered users by username or display name.
+    """
+    # 1. Batch-fetch friendship links for current_user into O(1) hash maps
     res_f = await db.execute(
         select(Friendship).filter(
             or_(
@@ -1284,10 +1300,12 @@ async def explore_users(
     friendships = res_f.scalars().all()
     status_map = {}
     req_id_map = {}
+    accepted_friend_ids = set()
     for f in friendships:
         other_id = f.addressee_id if f.requester_id == current_user.id else f.requester_id
         if f.status == "accepted":
             status_map[other_id] = "accepted"
+            accepted_friend_ids.add(other_id)
         elif f.status == "pending":
             if f.requester_id == current_user.id:
                 status_map[other_id] = "pending_sent"
@@ -1295,13 +1313,184 @@ async def explore_users(
                 status_map[other_id] = "pending_received"
                 req_id_map[other_id] = f.id
 
+    # Explicit search mode
+    if query and query.strip():
+        q_clean = f"%{query.strip().lower()}%"
+        res = await db.execute(
+            select(User)
+            .filter(
+                User.id != current_user.id,
+                or_(User.username.ilike(q_clean), User.name.ilike(q_clean))
+            )
+            .order_by(User.name.asc())
+            .limit(50)
+        )
+        users = res.scalars().all()
+        result = []
+        for u in users:
+            u_out = UserOut.from_orm(u)
+            u_out.friendship_status = status_map.get(u.id)
+            u_out.friend_request_id = req_id_map.get(u.id)
+            result.append(u_out)
+        return result
+
+    # 2. Recommendations mode: find all rooms current_user participates in (O(1) batch queries)
+    res_my_mem = await db.execute(select(RoomMember.room_id).filter(RoomMember.user_id == current_user.id))
+    res_my_mod = await db.execute(select(RoomModerator.room_id).filter(RoomModerator.user_id == current_user.id))
+    res_my_created = await db.execute(select(Room.id).filter(Room.creator_id == current_user.id))
+    my_room_ids = (
+        {r[0] for r in res_my_mem.all()}
+        | {r[0] for r in res_my_mod.all()}
+        | {r[0] for r in res_my_created.all()}
+    )
+
+    recent_interacted: dict[str, datetime] = {}
+    common_room_user_ids: set[str] = set()
+
+    if my_room_ids:
+        my_room_list = list(my_room_ids)
+
+        # Users who recently sent messages in shared rooms
+        res_msgs = await db.execute(
+            select(Message.sender_id, Message.created_at)
+            .filter(
+                Message.room_id.in_(my_room_list),
+                Message.sender_id.isnot(None),
+                Message.sender_id != current_user.id
+            )
+            .order_by(Message.created_at.desc())
+            .limit(300)
+        )
+        for sid, ts in res_msgs.all():
+            if sid and sid not in recent_interacted:
+                recent_interacted[sid] = ts or datetime.min
+
+        # All members, moderators, and creators in shared rooms
+        res_other_mem = await db.execute(
+            select(RoomMember.user_id).filter(
+                RoomMember.room_id.in_(my_room_list),
+                RoomMember.user_id != current_user.id
+            )
+        )
+        res_other_mod = await db.execute(
+            select(RoomModerator.user_id).filter(
+                RoomModerator.room_id.in_(my_room_list),
+                RoomModerator.user_id != current_user.id
+            )
+        )
+        res_other_creator = await db.execute(
+            select(Room.creator_id).filter(
+                Room.id.in_(my_room_list),
+                Room.creator_id.isnot(None),
+                Room.creator_id != current_user.id
+            )
+        )
+        common_room_user_ids = (
+            {r[0] for r in res_other_mem.all()}
+            | {r[0] for r in res_other_mod.all()}
+            | {r[0] for r in res_other_creator.all()}
+        )
+
+    # 3. LinkedIn-style multi-hop mutual friend BFS (up to 3 hops in 2 batch DB queries)
+    hop2_mutual_counts: dict[str, int] = {}
+    hop3_bridge_counts: dict[str, int] = {}
+    visited = {current_user.id} | accepted_friend_ids
+
+    if accepted_friend_ids:
+        hop1_list = list(accepted_friend_ids)[:250]
+        res_hop2 = await db.execute(
+            select(Friendship.requester_id, Friendship.addressee_id).filter(
+                Friendship.status == "accepted",
+                or_(
+                    Friendship.requester_id.in_(hop1_list),
+                    Friendship.addressee_id.in_(hop1_list)
+                )
+            )
+        )
+        for req_id, addr_id in res_hop2.all():
+            if req_id in accepted_friend_ids and addr_id not in visited:
+                hop2_mutual_counts[addr_id] = hop2_mutual_counts.get(addr_id, 0) + 1
+            elif addr_id in accepted_friend_ids and req_id not in visited:
+                hop2_mutual_counts[req_id] = hop2_mutual_counts.get(req_id, 0) + 1
+
+        hop2_ids = set(hop2_mutual_counts.keys())
+        visited |= hop2_ids
+
+        if hop2_ids:
+            # Expand top 200 2nd-degree nodes to discover 3rd-degree connections (Hop 3)
+            top_hop2 = sorted(hop2_ids, key=lambda uid: hop2_mutual_counts[uid], reverse=True)[:200]
+            top_hop2_set = set(top_hop2)
+            res_hop3 = await db.execute(
+                select(Friendship.requester_id, Friendship.addressee_id).filter(
+                    Friendship.status == "accepted",
+                    or_(
+                        Friendship.requester_id.in_(top_hop2),
+                        Friendship.addressee_id.in_(top_hop2)
+                    )
+                )
+            )
+            for req_id, addr_id in res_hop3.all():
+                if req_id in top_hop2_set and addr_id not in visited:
+                    hop3_bridge_counts[addr_id] = hop3_bridge_counts.get(addr_id, 0) + 1
+                elif addr_id in top_hop2_set and req_id not in visited:
+                    hop3_bridge_counts[req_id] = hop3_bridge_counts.get(req_id, 0) + 1
+
+    hop2_ids = set(hop2_mutual_counts.keys())
+    hop3_ids = set(hop3_bridge_counts.keys())
+
+    candidate_ids = (
+        common_room_user_ids
+        | set(recent_interacted.keys())
+        | hop2_ids
+        | hop3_ids
+        | accepted_friend_ids
+    )
+    candidate_ids.discard(current_user.id)
+    if not candidate_ids:
+        return []
+
+    res_users = await db.execute(
+        select(User).filter(User.id.in_(list(candidate_ids)))
+    )
+    users = res_users.scalars().all()
+
     result = []
     for u in users:
         u_out = UserOut.from_orm(u)
         u_out.friendship_status = status_map.get(u.id)
         u_out.friend_request_id = req_id_map.get(u.id)
+
+        mutual_cnt = hop2_mutual_counts.get(u.id, 0)
+        if u.id in recent_interacted:
+            if mutual_cnt > 0:
+                plural = "friend" if mutual_cnt == 1 else "friends"
+                u_out.recommendation_reason = f"Recently active in your room · {mutual_cnt} mutual {plural}"
+            else:
+                u_out.recommendation_reason = "Recently active in your room"
+        elif mutual_cnt > 0:
+            plural = "friend" if mutual_cnt == 1 else "friends"
+            u_out.recommendation_reason = f"{mutual_cnt} mutual {plural}"
+        elif u.id in common_room_user_ids:
+            u_out.recommendation_reason = "Common room member"
+        elif u.id in hop3_ids:
+            u_out.recommendation_reason = "3rd-degree connection"
         result.append(u_out)
 
+    # Sort: recently interacted -> 2nd-degree mutual friends (most mutuals first)
+    #       -> common room members -> 3rd-degree connections (most bridges first) -> other friends
+    def _rec_sort_key(u: UserOut):
+        if u.id in recent_interacted:
+            ts = recent_interacted[u.id].timestamp() if recent_interacted[u.id] != datetime.min else 0
+            return (0, -ts, -hop2_mutual_counts.get(u.id, 0), (u.name or "").lower())
+        if u.id in hop2_mutual_counts:
+            return (1, -hop2_mutual_counts[u.id], 0, (u.name or "").lower())
+        if u.id in common_room_user_ids:
+            return (2, 0, 0, (u.name or "").lower())
+        if u.id in hop3_bridge_counts:
+            return (3, -hop3_bridge_counts[u.id], 0, (u.name or "").lower())
+        return (4, 0, 0, (u.name or "").lower())
+
+    result.sort(key=_rec_sort_key)
     return result
 
 
@@ -1675,7 +1864,7 @@ async def get_room_messages(
 
     res = await db.execute(
         select(Message, User)
-        .join(User, Message.sender_id == User.id)
+        .outerjoin(User, Message.sender_id == User.id)
         .filter(Message.room_id == room.id)
         .order_by(Message.created_at.desc())
         .limit(limit)
@@ -1686,14 +1875,16 @@ async def get_room_messages(
         msg_date = msg.created_at
         if msg_date and msg_date.tzinfo is None:
             msg_date = msg_date.replace(tzinfo=timezone.utc)
+        is_deleted_guest = sender is None
         messages.append(MessageOut(
             id=msg.id,
             content=msg.content,
-            sender_id=sender.id,
-            sender_name=sender.name,
-            sender_username=sender.username,
-            sender_gender=sender.gender or "Prefer not to say",
-            sender_avatar=sender.avatar,
+            sender_id=sender.id if sender else None,
+            sender_name=sender.name if sender else "Guest User",
+            sender_username=sender.username if sender else "guest",
+            sender_gender=(sender.gender or "Prefer not to say") if sender else "Prefer not to say",
+            sender_avatar=sender.avatar if sender else None,
+            is_guest_deleted=is_deleted_guest,
             room_id=room.id,
             recipient_id=None,
             created_at=msg_date

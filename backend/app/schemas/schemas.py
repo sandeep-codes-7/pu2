@@ -45,6 +45,7 @@ class UserOut(BaseModel):
     created_at: datetime
     friendship_status: Optional[str] = None  # None, "pending_sent", "pending_received", "accepted"
     friend_request_id: Optional[str] = None
+    recommendation_reason: Optional[str] = None
     last_message: Optional[str] = None
     last_message_at: Optional[datetime] = None
     last_message_sender_id: Optional[str] = None
@@ -201,11 +202,12 @@ class MessageCreate(BaseModel):
 class MessageOut(BaseModel):
     id: str
     content: str
-    sender_id: str
+    sender_id: Optional[str] = None
     sender_name: str
     sender_username: str
     sender_gender: Optional[str] = "Prefer not to say"
     sender_avatar: Optional[str] = None
+    is_guest_deleted: bool = False
     room_id: Optional[str] = None
     recipient_id: Optional[str] = None
     created_at: datetime

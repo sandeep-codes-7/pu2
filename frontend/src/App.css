@@ -540,6 +540,25 @@
   text-decoration: underline;
 }
 
+.msg-sender.guest-deleted {
+  cursor: default;
+  color: var(--text-muted);
+}
+
+.msg-sender.guest-deleted:hover {
+  text-decoration: none;
+}
+
+.user-avatar.guest-deleted {
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-input);
+  color: var(--text-dim);
+  border: 1px solid var(--border-subtle);
+}
+
 .msg-time {
   font-size: 0.68rem;
   color: var(--text-dim);
@@ -1152,6 +1171,19 @@
   background: rgba(34, 197, 94, 0.14);
   color: #86efac;
   border-color: rgba(34, 197, 94, 0.3);
+}
+
+.badge-recommendation {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 500;
 }
 
 /* ─── Requests List in Profile Modal ─── */
@@ -4957,4 +4989,63 @@ span.desktop-only {
 
 [data-theme="dark"] .ghost-switch.checked .ghost-switch-thumb {
   background: #141415;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INSTANT PASS RESTRICTED FEATURE WARNING MODAL
+   ═══════════════════════════════════════════════════════════════ */
+.instant-pass-warning-modal {
+  max-width: 400px;
+  width: min(400px, calc(100vw - 32px));
+  padding: 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.instant-pass-warning-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.instant-pass-warning-title {
+  font-size: 1.08rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.instant-pass-warning-desc {
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.instant-pass-warning-note {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.instant-pass-warning-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.instant-pass-warning-actions button {
+  flex: 1;
+  justify-content: center;
 }

@@ -1,10 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import './LandingPage.css';
 import {
-  Zap, Shield, Users, MessageSquare, ArrowRight,
-  Heart, CheckCircle2, Lock, Flame, Info, ChevronDown, Check,
-  HelpCircle, Compass, UserCheck, LogIn, ExternalLink, Globe,
-  Hash, Crown, X, RefreshCw, Smile, ArrowUpRight, Sun, Moon
+  Zap, Hash, Shuffle, ArrowRight, RefreshCw, Sun, Moon
 } from 'lucide-react';
 
 const RANDOM_GUEST_NAMES = [
@@ -13,14 +10,7 @@ const RANDOM_GUEST_NAMES = [
   "EchoSparrow", "VibeRabbit", "AlphaOtter", "ShadowFox", "CosmicPanda"
 ];
 
-const SAMPLE_INTERESTS = [
-  "Coding", "Gaming", "Music", "AI & Tech",
-  "Design", "Chill Talk", "Anime", "Movies",
-  "Startups", "Fitness"
-];
-
 export default function LandingPage({
-  onOpenAuth,
   demoUsername,
   setDemoUsername,
   demoName,
@@ -32,767 +22,214 @@ export default function LandingPage({
   onLaunchApp,
   authError,
   loginNotice,
-  showAuthModal,
-  setShowAuthModal,
   theme,
   toggleTheme
 }) {
-  // Interactive Live Demo states
-  const [heroWidgetTab, setHeroWidgetTab] = useState("pass"); // "pass" | "mate"
-  const [selectedInterests, setSelectedInterests] = useState(["Coding", "Gaming", "AI & Tech"]);
-  const [simStep, setSimStep] = useState("idle"); // "idle" | "matching" | "matched" | "mutual"
-  const [simPartner, setSimPartner] = useState({ name: "Fox", initials: "FX", interests: "Gaming, Coding" });
-  const [faqOpen, setFaqOpen] = useState(null);
-
-  // Quick random guest generator
   const handleRandomizeGuest = () => {
     const randomName = RANDOM_GUEST_NAMES[Math.floor(Math.random() * RANDOM_GUEST_NAMES.length)];
     setDemoUsername(randomName);
   };
 
-  // Toggle interest in simulation
-  const toggleInterest = (interest) => {
-    setSelectedInterests(prev =>
-      prev.includes(interest)
-        ? (prev.length > 1 ? prev.filter(i => i !== interest) : prev)
-        : [...prev, interest]
-    );
-  };
-
-  // Run Mate Match Simulation
-  const handleRunSimulation = () => {
-    setSimStep("matching");
-    setTimeout(() => {
-      const partners = [
-        { name: "Fox", initials: "FX", interests: "Coding, Gaming" },
-        { name: "Panda", initials: "PD", interests: "AI, Chill Talk" },
-        { name: "Wolf", initials: "WF", interests: "Gaming, Tech" },
-        { name: "Otter", initials: "OT", interests: "Design, Music" }
-      ];
-      setSimPartner(partners[Math.floor(Math.random() * partners.length)]);
-      setSimStep("matched");
-    }, 1800);
-  };
-
-  const handleSimExpressInterest = () => {
-    setSimStep("mutual");
-  };
-
-  const toggleFaq = (index) => {
-    setFaqOpen(prev => (prev === index ? null : index));
-  };
-
   return (
-    <div className="landing-page-container">
-      {/* ── STICKY GLASS NAVBAR ── */}
-      <header className="landing-navbar">
-        <div className="landing-navbar-inner">
-          <a href="#" className="landing-brand">
-            <div className="landing-brand-icon">PU</div>
-            <span className="brand-gradient landing-brand-text">PairUP</span>
+    <div className="lp-shell">
+      {/* Quiet Top Bar */}
+      <header className="lp-header">
+        <div className="lp-header-inner">
+          <a href="/" className="lp-brand">
+            <span className="lp-brand-mark">PU</span>
+            <span className="lp-brand-name">PairUP</span>
           </a>
 
-          <nav className="landing-nav-links">
-            <a href="#instant-pass" className="landing-nav-link">Instant Pass</a>
-            <a href="#mate" className="landing-nav-link">Mate Match</a>
-            <a href="#rooms" className="landing-nav-link">Public Rooms</a>
-            <a href="/about" className="landing-nav-link">About</a>
-            <a href="/guidelines" className="landing-nav-link">Guidelines</a>
-            <a href="#faq" className="landing-nav-link">FAQ</a>
-          </nav>
-
-          <div className="landing-nav-actions">
+          <div className="lp-header-right">
+            <nav className="lp-nav" aria-label="Documentation">
+              <a href="/about" className="lp-nav-link">About</a>
+              <a href="/guidelines" className="lp-nav-link">Guidelines</a>
+            </nav>
             {toggleTheme && (
               <button
                 type="button"
-                className="btn-icon-sm"
+                className="lp-theme-btn"
                 onClick={toggleTheme}
+                aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
                 title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-                style={{ width: "36px", height: "36px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}
               >
-                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                {theme === "dark" ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
               </button>
-            )}
-            {isLoggedIn ? (
-              <button
-                type="button"
-                className="btn-primary landing-cta-btn"
-                onClick={onLaunchApp}
-              >
-                Go to Chats <ArrowRight size={16} />
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="landing-btn-secondary"
-                  onClick={() => setShowAuthModal(true)}
-                >
-                  <LogIn size={15} /> Sign In
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary landing-cta-btn"
-                  onClick={() => {
-                    if (!demoUsername) handleRandomizeGuest();
-                    setShowAuthModal(true);
-                  }}
-                >
-                  <Zap size={15} /> Instant Pass
-                </button>
-              </>
             )}
           </div>
         </div>
       </header>
 
-      {/* ── HERO SECTION ── */}
-      <section className="landing-hero-section">
-        <div className="landing-hero-split">
-          <div className="landing-hero-copy">
-            <h1 className="landing-hero-title">
+      {/* Main Split: Briefing + Login Card */}
+      <main className="lp-main">
+        <div className="lp-grid">
+          {/* Left: Concise Product Briefing */}
+          <section className="lp-brief" aria-label="About PairUP">
+            <h1 className="lp-title">
               Real-time rooms and anonymous 1-on-1 matching
             </h1>
-
-            <p className="landing-hero-subtitle">
-              Jump into public community rooms with zero setup via <strong>Instant Pass</strong>, or pair up anonymously with someone who shares your interests through <strong>Mate</strong>.
+            <p className="lp-lead">
+              PairUP is a browser-native chat space for public topic rooms, direct messaging, and interest-based anonymous matching. Jump in with a temporary guest pass or sign in with Google for persistent chats and friends.
             </p>
 
-            <div className="landing-hero-actions">
+            <ul className="lp-features">
+              <li className="lp-feature-item">
+                <span className="lp-feature-icon" aria-hidden="true">
+                  <Hash size={16} strokeWidth={1.5} />
+                </span>
+                <div className="lp-feature-copy">
+                  <span className="lp-feature-title">Public and private rooms</span>
+                  <span className="lp-feature-desc">Join open spaces like #general or create moderated rooms with invite links.</span>
+                </div>
+              </li>
+
+              <li className="lp-feature-item">
+                <span className="lp-feature-icon" aria-hidden="true">
+                  <Shuffle size={16} strokeWidth={1.5} />
+                </span>
+                <div className="lp-feature-copy">
+                  <span className="lp-feature-title">Anonymous Mate matching</span>
+                  <span className="lp-feature-desc">Match 1-on-1 by shared interests under animal personas and unlock profiles only on mutual consent.</span>
+                </div>
+              </li>
+
+              <li className="lp-feature-item">
+                <span className="lp-feature-icon" aria-hidden="true">
+                  <Zap size={16} strokeWidth={1.5} />
+                </span>
+                <div className="lp-feature-copy">
+                  <span className="lp-feature-title">Instant Pass guest access</span>
+                  <span className="lp-feature-desc">Pick a handle with no email or password—temporary guest data clears automatically when you leave.</span>
+                </div>
+              </li>
+            </ul>
+          </section>
+
+          {/* Right: Inline Login & Instant Pass Card */}
+          <section className="lp-auth-col" aria-label="Sign in">
+            <div className="lp-auth-card">
               {isLoggedIn ? (
-                <button type="button" className="landing-hero-cta-primary" onClick={onLaunchApp}>
-                  <span>Open PairUP Chat</span>
-                  <ArrowRight size={16} strokeWidth={1.5} />
-                </button>
-              ) : (
-                <>
+                <div className="lp-signed-in">
+                  <h2>Welcome back to PairUP</h2>
+                  <p>Your session is active. Return to your rooms and direct messages.</p>
                   <button
                     type="button"
-                    className="landing-hero-cta-primary"
-                    onClick={() => {
-                      if (!demoUsername) handleRandomizeGuest();
-                      setShowAuthModal(true);
-                    }}
+                    className="lp-btn-primary"
+                    onClick={onLaunchApp}
                   >
-                    <Zap size={16} strokeWidth={1.5} />
-                    <span>Enter with Instant Pass</span>
-                  </button>
-                  <a href="#mate" className="landing-hero-cta-secondary">
-                    <span>How Mate works</span>
+                    <span>Open PairUP</span>
                     <ArrowRight size={16} strokeWidth={1.5} />
-                  </a>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="lp-auth-head">
+                    <h2>Sign in to PairUP</h2>
+                    <p>Use Google for permanent friends and Mate, or enter as a guest</p>
+                  </div>
+
+                  {loginNotice && (
+                    <div className="lp-alert" role="alert">
+                      {loginNotice}
+                    </div>
+                  )}
+
+                  {authError && (
+                    <div className="lp-alert" role="alert">
+                      {authError}
+                    </div>
+                  )}
+
+                  {/* Google OAuth Button Target */}
+                  <div id="google-signin-btn" className="lp-google-slot" />
+
+                  <div className="lp-divider">
+                    <span>or Instant Pass</span>
+                  </div>
+
+                  <form onSubmit={handleDemoLogin} className="lp-form">
+                    <div className="lp-field">
+                      <label htmlFor="lp-guest-username">Username</label>
+                      <div className="lp-input-row">
+                        <input
+                          id="lp-guest-username"
+                          type="text"
+                          placeholder="e.g. StarVoyager"
+                          value={demoUsername}
+                          onChange={e => setDemoUsername(e.target.value)}
+                          required
+                          autoComplete="username"
+                          className="lp-input"
+                        />
+                        <button
+                          type="button"
+                          className="lp-btn-secondary lp-random-btn"
+                          onClick={handleRandomizeGuest}
+                          title="Generate random username"
+                        >
+                          <RefreshCw size={14} strokeWidth={1.5} />
+                          <span>Random</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="lp-form-two-col">
+                      <div className="lp-field">
+                        <label htmlFor="lp-guest-name">Display name</label>
+                        <input
+                          id="lp-guest-name"
+                          type="text"
+                          placeholder="Optional"
+                          value={demoName}
+                          onChange={e => setDemoName(e.target.value)}
+                          className="lp-input"
+                        />
+                      </div>
+
+                      <div className="lp-field">
+                        <label htmlFor="lp-guest-gender">Gender</label>
+                        <select
+                          id="lp-guest-gender"
+                          value={demoGender}
+                          onChange={e => setDemoGender(e.target.value)}
+                          className="lp-input lp-select"
+                        >
+                          <option value="Prefer not to say">Prefer not to say</option>
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <button type="submit" className="lp-btn-primary">
+                      <Zap size={15} strokeWidth={1.5} />
+                      <span>Enter with Instant Pass</span>
+                    </button>
+                  </form>
+
+                  <p className="lp-auth-footnote">
+                    Instant Pass sessions are temporary and cleared on logout.
+                  </p>
                 </>
               )}
             </div>
-
-            <div className="landing-trust-strip">
-              <div className="trust-item"><Check size={14} strokeWidth={1.5} /> Free to use</div>
-              <div className="trust-item"><Check size={14} strokeWidth={1.5} /> No email required</div>
-              <div className="trust-item"><Check size={14} strokeWidth={1.5} /> Ephemeral guest sessions</div>
-            </div>
-          </div>
-
-          {/* ── INTERACTIVE HERO WIDGET ── */}
-          <div className="landing-interactive-widget-box">
-            <div className="widget-header">
-              <div className="widget-tabs">
-                <button
-                  type="button"
-                  className={`widget-tab ${heroWidgetTab === "pass" ? "active" : ""}`}
-                  onClick={() => setHeroWidgetTab("pass")}
-                >
-                  <Zap size={15} strokeWidth={1.5} /> Instant Pass
-                </button>
-                <button
-                  type="button"
-                  className={`widget-tab ${heroWidgetTab === "mate" ? "active" : ""}`}
-                  onClick={() => setHeroWidgetTab("mate")}
-                >
-                  <Users size={15} strokeWidth={1.5} /> Mate Simulator
-                </button>
-              </div>
-              <span className="widget-live-tag">Preview</span>
-            </div>
-
-            <div className="widget-body">
-              {heroWidgetTab === "pass" ? (
-                <div className="widget-pass-flow">
-                  <div className="widget-pass-description">
-                    <h4>Enter with a temporary guest pass</h4>
-                    <p>Pick a handle or randomize one to join public rooms immediately.</p>
-                  </div>
-
-                  <form onSubmit={handleDemoLogin} className="widget-pass-form">
-                    <div className="widget-input-group">
-                      <input
-                        type="text"
-                        placeholder="Username (e.g. StarVoyager)"
-                        value={demoUsername}
-                        onChange={e => setDemoUsername(e.target.value)}
-                        required
-                        className="chat-input widget-input"
-                      />
-                      <button
-                        type="button"
-                        className="btn-secondary widget-random-btn"
-                        onClick={handleRandomizeGuest}
-                        title="Randomize username"
-                      >
-                        <RefreshCw size={14} strokeWidth={1.5} /> Random
-                      </button>
-                    </div>
-
-                    <div className="widget-form-row">
-                      <input
-                        type="text"
-                        placeholder="Display name (optional)"
-                        value={demoName}
-                        onChange={e => setDemoName(e.target.value)}
-                        className="chat-input widget-input-sm"
-                      />
-                      <select
-                        value={demoGender}
-                        onChange={e => setDemoGender(e.target.value)}
-                        className="chat-input widget-input-sm"
-                      >
-                        <option value="Prefer not to say">Gender: Any</option>
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-
-                    <button type="submit" className="btn-primary widget-submit-btn">
-                      <Zap size={16} strokeWidth={1.5} /> Enter chat
-                    </button>
-                  </form>
-                </div>
-              ) : (
-                <div className="widget-mate-flow">
-                  {simStep === "idle" && (
-                    <>
-                      <div className="widget-mate-info">
-                        <h4>Pick interests to find an anonymous mate</h4>
-                        <p>PairUP pairs you with someone online who shares your topics.</p>
-                      </div>
-                      <div className="widget-interest-chips">
-                        {SAMPLE_INTERESTS.map(item => (
-                          <button
-                            key={item}
-                            type="button"
-                            className={`widget-chip ${selectedInterests.includes(item) ? "active" : ""}`}
-                            onClick={() => toggleInterest(item)}
-                          >
-                            {item}
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-primary widget-submit-btn"
-                        onClick={handleRunSimulation}
-                      >
-                        <Users size={16} strokeWidth={1.5} /> Run match simulation
-                      </button>
-                    </>
-                  )}
-
-                  {simStep === "matching" && (
-                    <div className="widget-sim-matching">
-                      <div className="sim-pulse-spinner">
-                        <RefreshCw size={22} strokeWidth={1.5} className="mate-spin-icon" />
-                      </div>
-                      <h4>Matching your interests</h4>
-                      <p>Looking for someone into {selectedInterests.slice(0, 2).join(" & ")}</p>
-                    </div>
-                  )}
-
-                  {simStep === "matched" && (
-                    <div className="widget-sim-matched">
-                      <div className="sim-avatar-pair">
-                        <div className="sim-avatar you"><span>You</span></div>
-                        <div className="sim-connector"><Zap size={16} strokeWidth={1.5} /></div>
-                        <div className="sim-avatar partner"><span>{simPartner.name}</span></div>
-                      </div>
-                      <div className="sim-chat-bubble">
-                        <strong>{simPartner.name}:</strong> "Hey, saw we both follow {selectedInterests[0] || 'tech'}. Good to pair up."
-                      </div>
-                      <p className="sim-tip">Click below to express interest privately</p>
-                      <button
-                        type="button"
-                        className="btn-interested active widget-heart-btn"
-                        onClick={handleSimExpressInterest}
-                      >
-                        <Heart size={16} strokeWidth={1.5} fill="currentColor" /> Express interest
-                      </button>
-                    </div>
-                  )}
-
-                  {simStep === "mutual" && (
-                    <div className="widget-sim-mutual">
-                      <div className="sim-mutual-badge">
-                        <CheckCircle2 size={14} strokeWidth={1.5} /> Mutual match
-                      </div>
-                      <h3>You are now friends on PairUP</h3>
-                      <p>Both users expressed interest. Identities are unlocked and direct messaging is open.</p>
-                      <button
-                        type="button"
-                        className="landing-btn-secondary"
-                        style={{ marginTop: "12px" }}
-                        onClick={() => setSimStep("idle")}
-                      >
-                        Try another simulation
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          </section>
         </div>
-      </section>
+      </main>
 
-      {/* ── SPOTLIGHT 1: INSTANT PASS ── */}
-      <section id="instant-pass" className="landing-section">
-        <div className="landing-section-header">
-          <div className="landing-section-badge">
-            <Zap size={14} />
-            <span>Instant Pass Feature</span>
-          </div>
-          <h2 className="landing-section-title">Zero Friction. <span className="brand-gradient">Instant Access.</span></h2>
-          <p className="landing-section-subtitle">
-            Tired of filling out endless sign-up forms, verifying emails, and managing passwords just to chat? Instant Pass lets you jump into PairUP in a single click.
-          </p>
-        </div>
-
-        <div className="landing-cards-grid">
-          <div className="landing-feature-card">
-            <div className="card-icon-wrap">
-              <Zap size={22} />
-            </div>
-            <h3>1-Click Entry</h3>
-            <p>Pick any unique username and you're immediately in the app. No email, no password, and zero confirmation delays.</p>
-          </div>
-
-          <div className="landing-feature-card">
-            <div className="card-icon-wrap">
-              <Shield size={22} />
-            </div>
-            <h3>Privacy Shield</h3>
-            <p>Instant Pass guest accounts are completely temporary. When your session ends or you log out, your guest identity is cleared.</p>
-          </div>
-
-          <div className="landing-feature-card">
-            <div className="card-icon-wrap">
-              <Users size={22} />
-            </div>
-            <h3>Full Public Chat Access</h3>
-            <p>Participate in public community rooms, read discussions, view room rosters, and experience real-time conversations.</p>
-          </div>
-
-          <div className="landing-feature-card">
-            <div className="card-icon-wrap">
-              <ArrowUpRight size={22} />
-            </div>
-            <h3>Upgrade Anytime</h3>
-            <p>Ready to save permanent friends and unlock private direct messaging? Upgrade seamlessly with Google Login at any time.</p>
-          </div>
-        </div>
-      </section>
-
-      {/* ── SPOTLIGHT 2: MATE (ANONYMOUS MATCHMAKING) ── */}
-      <section id="mate" className="landing-section">
-        <div className="landing-section-header">
-          <div className="landing-section-badge">
-            <Heart size={14} />
-            <span>Mate Matchmaking</span>
-          </div>
-          <h2 className="landing-section-title">Anonymous Chat. <span className="brand-gradient">Real Connections.</span></h2>
-          <p className="landing-section-subtitle">
-            Mate is PairUP's intelligent anonymous matchmaking engine. Pair up 1-on-1 with genuine people who share your passions without revealing your identity until you both want to.
-          </p>
-        </div>
-
-        <div className="landing-mate-steps-grid">
-          <div className="mate-step-card">
-            <div className="mate-step-number">01</div>
-            <h4>Input Shared Passions</h4>
-            <p>Tell Mate what you're into — from coding to gaming, music, science, or casual banter. Mate searches for active peers online.</p>
-          </div>
-
-          <div className="mate-step-card">
-            <div className="mate-step-number">02</div>
-            <h4>Anonymous animal personas</h4>
-            <p>Both users are assigned animal personas (Rabbit, Wolf, Panda, Fox, Turtle) with no profile photos until you match.</p>
-          </div>
-
-          <div className="mate-step-card">
-            <div className="mate-step-number">03</div>
-            <h4>Real-time 1-on-1 chat</h4>
-            <p>A focused 1-on-1 conversation feed with live typing indicators.</p>
-          </div>
-
-          <div className="mate-step-card">
-            <div className="mate-step-number">04</div>
-            <h4>Mutual interest unlock</h4>
-            <p>Click Interested if you want to stay in touch. When both agree, profiles are revealed and you become friends.</p>
-          </div>
-        </div>
-      </section>
-
-      {/* ── SPOTLIGHT 3: PUBLIC ROOMS ── */}
-      <section id="rooms" className="landing-section">
-        <div className="landing-section-header">
-          <div className="landing-section-badge">
-            <Hash size={14} />
-            <span>Community Spaces</span>
-          </div>
-          <h2 className="landing-section-title">Join Public Rooms. <span className="brand-gradient">Build Communities.</span></h2>
-          <p className="landing-section-subtitle">
-            From tech discussions to gaming hubs and open hangout spots, explore dynamic rooms created and moderated by users.
-          </p>
-        </div>
-
-        <div className="landing-rooms-preview-grid">
-          <div className="room-preview-card">
-            <div className="room-preview-header">
-              <div className="room-preview-icon"><Hash size={20} /></div>
-              <div>
-                <div className="room-preview-title">#general</div>
-                <div className="room-preview-slug">pairup.cc/general</div>
-              </div>
-            </div>
-            <p className="room-preview-desc">The open town square for PairUP. Say hello, introduce yourself, and meet people worldwide.</p>
-            <div className="room-preview-footer">
-              <span className="room-tag">Open to All</span>
-              <span className="room-tag">Active Now</span>
-            </div>
-          </div>
-
-          <div className="room-preview-card">
-            <div className="room-preview-header">
-              <div className="room-preview-icon"><Hash size={20} /></div>
-              <div>
-                <div className="room-preview-title">#developers</div>
-                <div className="room-preview-slug">pairup.cc/developers</div>
-              </div>
-            </div>
-            <p className="room-preview-desc">Coding, system design, web development, AI tools, and debugging discussions.</p>
-            <div className="room-preview-footer">
-              <span className="room-tag">Tech & Code</span>
-              <span className="room-tag">Moderated</span>
-            </div>
-          </div>
-
-          <div className="room-preview-card">
-            <div className="room-preview-header">
-              <div className="room-preview-icon"><Hash size={20} /></div>
-              <div>
-                <div className="room-preview-title">#gaming</div>
-                <div className="room-preview-slug">pairup.cc/gaming</div>
-              </div>
-            </div>
-            <p className="room-preview-desc">Find squad mates, discuss releases, strategies, and pair up for cooperative gaming.</p>
-            <div className="room-preview-footer">
-              <span className="room-tag">Gaming</span>
-              <span className="room-tag">Community</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="room-feature-highlights">
-          <div className="highlight-item">
-            <Crown size={18} />
-            <span>Prime Moderator & 5 Mod Slots for safe room governance</span>
-          </div>
-          <div className="highlight-item">
-            <Info size={18} />
-            <span>Dedicated "View Info" page with moderator & participant rosters</span>
-          </div>
-          <div className="highlight-item">
-            <Users size={18} />
-            <span>WhatsApp-style unread counter badges for incoming messages</span>
-          </div>
-        </div>
-      </section>
-
-      {/* ── COMPARISON TABLE ── */}
-      <section className="landing-section">
-        <div className="landing-section-header">
-          <h2 className="landing-section-title">Pick How You Want to Join</h2>
-          <p className="landing-section-subtitle">Whether you want maximum anonymity or persistent friendship circles, PairUP supports your style.</p>
-        </div>
-
-        <div className="comparison-table-wrap">
-          <table className="comparison-table">
-            <thead>
-              <tr>
-                <th>Feature</th>
-                <th>Instant Pass (Guest)</th>
-                <th>Authenticated (Google)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Sign-Up Requirement</td>
-                <td><span className="tag-green">None (Zero setup)</span></td>
-                <td>Google OAuth 2.0</td>
-              </tr>
-              <tr>
-                <td>Public Chat Rooms</td>
-                <td><Check size={16} /> Full Access</td>
-                <td><Check size={16} /> Full Access</td>
-              </tr>
-              <tr>
-                <td>Room Info & Participants</td>
-                <td><Check size={16} /> View all rosters</td>
-                <td><Check size={16} /> View all rosters</td>
-              </tr>
-              <tr>
-                <td>Create & Moderate Rooms</td>
-                <td><span className="tag-muted">Guest only</span></td>
-                <td><Check size={16} /> Prime Moderator</td>
-              </tr>
-              <tr>
-                <td>Mate Anonymous Matchmaking</td>
-                <td><span className="tag-muted">Read-only preview</span></td>
-                <td><Check size={16} /> Full Matching & Friends Unlock</td>
-              </tr>
-              <tr>
-                <td>Persistent Direct Messaging</td>
-                <td><span className="tag-muted">Session only</span></td>
-                <td><Check size={16} /> Permanent Friendships</td>
-              </tr>
-              <tr>
-                <td>Privacy & Data Retention</td>
-                <td><span className="tag-green">Cleared on exit</span></td>
-                <td>Encrypted & Protected</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* ── FAQ SECTION (SEO ACCORDION) ── */}
-      <section id="faq" className="landing-section">
-        <div className="landing-section-header">
-          <div className="landing-section-badge">
-            <HelpCircle size={14} />
-            <span>Common Questions</span>
-          </div>
-          <h2 className="landing-section-title">Frequently Asked Questions</h2>
-          <p className="landing-section-subtitle">Everything you need to know about PairUP, Instant Pass, and Mate.</p>
-        </div>
-
-        <div className="faq-accordion-list">
-          {[
-            {
-              q: "What is Instant Pass and how does it work?",
-              a: "Instant Pass is PairUP's unique guest access feature. It lets anyone enter PairUP without registering, providing an email, or setting a password. You simply enter a nickname and immediately participate in public rooms. It is completely private and temporary."
-            },
-            {
-              q: "How does the Mate anonymous matchmaking system work?",
-              a: "Mate lets you enter interests like Coding or Gaming and join a live queue. When someone online with similar interests is found, you are paired in a private chat under animal names (e.g., Rabbit, Wolf). If both participants click Interested, profiles are exchanged and you become friends on PairUP."
-            },
-            {
-              q: "Is PairUP completely free to use?",
-              a: "Yes. PairUP is free with no paywalls or subscriptions for chatting, matching, or creating public rooms."
-            },
-            {
-              q: "Can I create my own public chat room?",
-              a: "Yes. Authenticated users can create public chat rooms with custom titles, descriptions, and avatars. The creator becomes the Prime Moderator and can appoint up to 4 additional moderators to keep the room safe."
-            },
-            {
-              q: "How does PairUP protect my privacy?",
-              a: "PairUP uses encrypted WebSocket communication. Instant Pass guest accounts leave zero trace after you leave. In Mate chat, your real identity is never exposed unless both participants explicitly click 'Interested' to consent."
-            },
-            {
-              q: "Can I use PairUP on my smartphone?",
-              a: "Absolutely. PairUP is built with a responsive, mobile-first design that adapts seamlessly to phones, tablets, and desktop browsers with smooth bottom-anchored chat bars and touch controls."
-            }
-          ].map((item, idx) => (
-            <div key={idx} className={`faq-accordion-item ${faqOpen === idx ? "open" : ""}`}>
-              <button
-                type="button"
-                className="faq-accordion-trigger"
-                onClick={() => toggleFaq(idx)}
-              >
-                <span>{item.q}</span>
-                <ChevronDown size={18} className="faq-chevron" />
-              </button>
-              {faqOpen === idx && (
-                <div className="faq-accordion-content">
-                  <p>{item.a}</p>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── FINAL CTA BANNER ── */}
-      <section className="landing-cta-banner">
-        <div className="cta-banner-glow" />
-        <div className="cta-banner-content">
-          <h2>Ready to start chatting</h2>
-          <p>Enter a public room or try anonymous Mate matching without creating an account.</p>
-          <div className="cta-banner-actions">
-            <button
-              type="button"
-              className="landing-hero-cta-primary"
-              onClick={() => {
-                if (!demoUsername) handleRandomizeGuest();
-                setShowAuthModal(true);
-              }}
-            >
-              <Zap size={16} strokeWidth={1.5} />
-              <span>Launch Instant Pass</span>
-            </button>
-            <button
-              type="button"
-              className="landing-btn-secondary"
-              onClick={() => setShowAuthModal(true)}
-            >
-              <LogIn size={16} strokeWidth={1.5} /> Sign In with Google
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* ── FOOTER ── */}
-      <footer className="landing-footer">
-        <div className="landing-footer-inner">
-          <div className="footer-col brand-col">
-            <div className="landing-brand">
-              <div className="landing-brand-icon">PU</div>
-              <span className="brand-gradient landing-brand-text">PairUP</span>
-            </div>
-            <p className="footer-desc">
-              The modern real-time connection platform. Chat freely in public rooms, pair up with an anonymous Mate, or explore the community with Instant Pass.
-            </p>
-            <div className="footer-copyright">
-              © {new Date().getFullYear()} PairUP (pairup.cc). All rights reserved.
-            </div>
-          </div>
-
-          <div className="footer-col">
-            <h5>Features</h5>
-            <ul>
-              <li><a href="#instant-pass">Instant Pass (Guest)</a></li>
-              <li><a href="#mate">Mate Matchmaking</a></li>
-              <li><a href="#rooms">Public Chat Rooms</a></li>
-              <li><a href="/about">How PairUP Works</a></li>
-            </ul>
-          </div>
-
-          <div className="footer-col">
-            <h5>Community</h5>
-            <ul>
-              <li><a href="#rooms">#general Room</a></li>
-              <li><a href="#rooms">#developers Room</a></li>
-              <li><a href="#rooms">#gaming Room</a></li>
-              <li><a href="/guidelines">Community Guidelines</a></li>
-              <li><a href="#faq">FAQ &amp; Support</a></li>
-            </ul>
-          </div>
-
-          <div className="footer-col">
-            <h5>Privacy &amp; Terms</h5>
-            <ul>
-              <li><a href="/about">About PairUP</a></li>
-              <li><a href="/privacy">Privacy Policy</a></li>
-              <li><a href="/terms">Terms of Service</a></li>
-              <li><a href="/guidelines">Safety Standards</a></li>
-            </ul>
+      {/* Slim Footer */}
+      <footer className="lp-footer">
+        <div className="lp-footer-inner">
+          <span className="lp-copyright">© {new Date().getFullYear()} PairUP (pairup.cc)</span>
+          <div className="lp-footer-links">
+            <a href="/about">About</a>
+            <a href="/guidelines">Guidelines</a>
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
           </div>
         </div>
       </footer>
-
-      {/* ── AUTH MODAL ── */}
-      {showAuthModal && (
-        <div className="auth-modal-overlay" onClick={() => setShowAuthModal(false)}>
-          <div className="auth-modal-card" onClick={e => e.stopPropagation()}>
-            <button
-              type="button"
-              className="auth-modal-close"
-              onClick={() => setShowAuthModal(false)}
-            >
-              <X size={18} />
-            </button>
-
-            <div style={{ textAlign: "center", marginBottom: "20px" }}>
-              <div className="landing-brand-icon" style={{ margin: "0 auto 10px" }}>PU</div>
-              <h2 className="brand-gradient" style={{ fontSize: "1.8rem", marginBottom: "4px" }}>PairUP</h2>
-              <p style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>Choose how you want to enter</p>
-            </div>
-
-            {loginNotice && (
-              <div className="error-banner" style={{ marginBottom: "14px" }}>
-                {loginNotice}
-              </div>
-            )}
-
-            {authError && (
-              <div className="error-banner" style={{ marginBottom: "14px" }}>{authError}</div>
-            )}
-
-            {/* Google Sign-in */}
-            <div id="google-signin-btn" style={{ display: "flex", justifyContent: "center", minHeight: "44px", marginBottom: "6px" }} />
-
-            <div className="divider" style={{ margin: "16px 0" }}>Or Continue With Instant Pass</div>
-
-            {/* Instant Pass Guest Form */}
-            <form onSubmit={handleDemoLogin} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <input
-                  type="text"
-                  placeholder="Choose Username"
-                  value={demoUsername}
-                  onChange={e => setDemoUsername(e.target.value)}
-                  required
-                  className="chat-input full-width"
-                />
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={handleRandomizeGuest}
-                  style={{ padding: "0 10px", flexShrink: 0 }}
-                  title="Randomize handle"
-                >
-                  <RefreshCw size={14} />
-                </button>
-              </div>
-
-              <input
-                type="text"
-                placeholder="Display Name (optional)"
-                value={demoName}
-                onChange={e => setDemoName(e.target.value)}
-                className="chat-input full-width"
-              />
-
-              <select
-                value={demoGender}
-                onChange={e => setDemoGender(e.target.value)}
-                className="chat-input full-width select-field"
-              >
-                <option value="Prefer not to say">Gender: Prefer not to say</option>
-                <option value="Male">Gender: Male</option>
-                <option value="Female">Gender: Female</option>
-                <option value="Other">Gender: Other</option>
-              </select>
-
-              <button type="submit" className="btn-primary full-width" style={{ marginTop: "4px" }}>
-                <Zap size={15} /> Enter as Instant Pass (Guest)
-              </button>
-            </form>
-
-            <p style={{ fontSize: "0.72rem", color: "var(--text-dim)", textAlign: "center", marginTop: "14px" }}>
-              Instant Pass sessions are temporary — your session data is removed when you leave.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

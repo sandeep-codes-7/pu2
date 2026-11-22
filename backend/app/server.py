@@ -586,14 +586,28 @@ async def websocket_gateway(
                 "user_id": logged_off_user["id"],
                 "status": "offline"
             })
-            # Purge instant pass guest account and data if they have closed all sessions
+            # Purge instant pass guest account while preserving their room messages as "Guest User"
             if logged_off_user.get("provider") == "demo":
+                guest_id = logged_off_user["id"]
                 async with AsyncSessionLocal() as db:
-                    res_guest = await db.execute(select(User).filter(User.id == logged_off_user["id"]))
+                    from sqlalchemy import update
+                    try:
+                        await db.execute(
+                            update(Message)
+                            .where(Message.sender_id == guest_id, Message.room_id.isnot(None))
+                            .values(sender_id=None)
+                        )
+                    except Exception:
+                        pass
+                    res_guest = await db.execute(select(User).filter(User.id == guest_id))
                     guest_obj = res_guest.scalars().first()
                     if guest_obj:
                         await db.delete(guest_obj)
                         await db.commit()
+                await hub.broadcast_global({
+                    "type": "guest_purged",
+                    "user_id": guest_id
+                })
 
 if __name__ == "__main__":
     import os, sys

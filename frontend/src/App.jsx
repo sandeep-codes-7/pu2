@@ -155,7 +155,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState("chat"); // "chat" | "explore" | "mate" | "mate_chat" | "announcements"
   const [activeTab, setActiveTab] = useState({ type: "room", id: null, data: null });
   const [mobileTab, setMobileTab] = useState("chat"); // "chat" | "announcements"
-  const [exploreFilter, setExploreFilter] = useState("all"); // "all" | "friends"
+  const [exploreFilter, setExploreFilter] = useState("recommendations"); // "recommendations" | "friends"
   const [announcementsTab, setAnnouncementsTab] = useState("rooms"); // "rooms" | "announcements"
   const [roomsFilterQuery, setRoomsFilterQuery] = useState("");
 
@@ -246,6 +246,12 @@ export default function App() {
 
   // Public Room Join Confirmation Modal
   const [roomJoinPrompt, setRoomJoinPrompt] = useState(null);
+
+  // Instant Pass Restricted Feature Warning Popup
+  const [instantPassWarning, setInstantPassWarning] = useState(null);
+
+  // Room Creation Eligibility Popup (requires > 5 friends for regular users)
+  const [roomCreateLockedModal, setRoomCreateLockedModal] = useState(null);
 
   // Active Chat Options Menu (Three Dots)
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
@@ -502,19 +508,76 @@ export default function App() {
 
   const handleInstantPassRedirect = useCallback((targetPath = "mate") => {
     if (currentUser?.provider === "demo") {
-      setToken("");
-      setCurrentUser(null);
-      localStorage.removeItem("pairup_token");
-      localStorage.removeItem("pairup_user");
-      setLoginNotice("You should login to use these features.");
-      setLoginReturnPath(targetPath);
-      setShowAuthModal(true);
-      setShowLandingPage(true);
-      showSnackbar("You should login to use these features.", "error");
+      const featureLabels = {
+        mate: "Mate anonymous matching",
+        explore: "sending friend requests",
+        invite: "joining private rooms by invite",
+        create_room: "creating rooms"
+      };
+      setInstantPassWarning({
+        targetPath,
+        featureLabel: featureLabels[targetPath] || "this feature"
+      });
       return true;
     }
     return false;
-  }, [currentUser, showSnackbar]);
+  }, [currentUser]);
+
+  const handleAttemptCreateRoom = useCallback(async () => {
+    if (!currentUser) return;
+    if (currentUser.provider === "demo") {
+      handleInstantPassRedirect("create_room");
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/users/${currentUser.id}/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) {
+        handleExpiredSession();
+        return;
+      }
+      if (res.ok) {
+        const data = await res.json();
+        const friendsCount = typeof data.friends_count === "number"
+          ? data.friends_count
+          : (data.friends?.length || 0);
+        if (friendsCount <= 5) {
+          setRoomCreateLockedModal({ friendsCount, requiredCount: 6 });
+          return;
+        }
+      }
+    } catch (e) { }
+    pushNavState("create_room");
+    setIsCreateRoomOpen(true);
+  }, [currentUser, token, handleInstantPassRedirect, pushNavState]);
+
+  const handleConfirmInstantPassLogin = useCallback(async () => {
+    const targetPath = instantPassWarning?.targetPath || "mate";
+    setInstantPassWarning(null);
+    if (token) {
+      try {
+        await fetch(`${API_BASE}/api/auth/logout`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (e) { }
+    }
+    if (wsRef.current) wsRef.current.close();
+    clearAllChatCache();
+    setToken("");
+    setCurrentUser(null);
+    localStorage.removeItem("pairup_token");
+    localStorage.removeItem("pairup_user");
+    setLoginNotice("Sign in with Google to use exclusive features.");
+    setLoginReturnPath(targetPath);
+    setShowAuthModal(true);
+    setShowLandingPage(true);
+    setMateStatus("idle");
+    setMateConversationId(null);
+    setMateConversationData(null);
+    setMateMessages([]);
+  }, [instantPassWarning, token]);
 
   const saveAuthSession = (jwtToken, user) => {
     setToken(jwtToken);
@@ -801,6 +864,27 @@ export default function App() {
             data.status === "online" ? next.add(data.user_id) : next.delete(data.user_id);
             return next;
           });
+        } else if (data.type === "guest_purged") {
+          const guestId = data.user_id;
+          if (guestId) {
+            setMessages(prev => prev.map(m =>
+              m.sender_id === guestId
+                ? {
+                    ...m,
+                    sender_id: null,
+                    sender_name: "Guest User",
+                    sender_username: "guest",
+                    sender_avatar: null,
+                    is_guest_deleted: true
+                  }
+                : m
+            ));
+            setRooms(prev => prev.map(r =>
+              r.last_message_sender_id === guestId
+                ? { ...r, last_message_sender_id: null, last_message_sender_name: "Guest User" }
+                : r
+            ));
+          }
         } else if (data.type === "room_message") {
           if (data.room_slug) {
             appendCachedMessage(buildChatKey("room", data.room_slug), data);
@@ -1326,6 +1410,9 @@ export default function App() {
   // PROFILE MODAL
   // ──────────────────────────────────────────────────────────────
   const openUserProfile = async (userId, initialTab = "profile") => {
+    if (!userId) return;
+    setRoomSettingsOpen(false);
+    setViewingRoomInfo(null);
     pushNavState("profile");
     setViewingProfileId(userId);
     setIsEditingProfile(false);
@@ -1486,11 +1573,19 @@ export default function App() {
     }
   }, [viewMode, fetchMateTrends]);
 
+  const clearOverlayViews = useCallback(() => {
+    setViewingProfileId(null);
+    setIsEditingProfile(false);
+    setRoomSettingsOpen(false);
+    setViewingRoomInfo(null);
+  }, []);
+
   const handleNavigateMate = () => {
     if (currentUser?.provider === "demo") {
       handleInstantPassRedirect("mate");
       return;
     }
+    clearOverlayViews();
     fetchMateTrends();
     if (mateConversationId && mateConversationData?.status === "active") {
       setViewMode("mate_chat");
@@ -2552,7 +2647,7 @@ export default function App() {
         <div className="brand-header">
           {!isSidebarCollapsed ? (
             <>
-              <div className="brand-logo" onClick={() => { setViewMode("chat"); setMobileTab("chat"); setActiveTab({ type: "direct", id: null, data: null }); setViewingProfileId(null); }}>
+              <div className="brand-logo" onClick={() => { clearOverlayViews(); setViewMode("chat"); setMobileTab("chat"); setActiveTab({ type: "direct", id: null, data: null }); }}>
                 <h1 className="brand-gradient">PairUP</h1>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
@@ -2600,8 +2695,8 @@ export default function App() {
         <div className="nav-tab-group desktop-only">
           <button
             type="button"
-            className={`nav-tab-btn ${viewMode === "chat" ? "active" : ""}`}
-            onClick={() => setViewMode("chat")}
+            className={`nav-tab-btn ${viewMode === "chat" && !viewingProfileId && !roomSettingsOpen && !viewingRoomInfo ? "active" : ""}`}
+            onClick={() => { clearOverlayViews(); setViewMode("chat"); }}
             title="Chats"
           >
             <MessageSquare size={16} />
@@ -2609,8 +2704,8 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={`nav-tab-btn ${viewMode === "announcements" ? "active" : ""}`}
-            onClick={() => { pushNavState("announcements"); setViewMode("announcements"); }}
+            className={`nav-tab-btn ${viewMode === "announcements" && !viewingProfileId && !roomSettingsOpen && !viewingRoomInfo ? "active" : ""}`}
+            onClick={() => { clearOverlayViews(); pushNavState("announcements"); setViewMode("announcements"); }}
             title="Announcements & Rooms"
           >
             <Megaphone size={16} />
@@ -2618,8 +2713,8 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={`nav-tab-btn ${viewMode === "explore" ? "active" : ""}`}
-            onClick={() => { pushNavState("explore"); setViewMode("explore"); loadExploreUsers(searchQuery); }}
+            className={`nav-tab-btn ${viewMode === "explore" && !viewingProfileId && !roomSettingsOpen && !viewingRoomInfo ? "active" : ""}`}
+            onClick={() => { clearOverlayViews(); pushNavState("explore"); setViewMode("explore"); loadExploreUsers(searchQuery); }}
             title="Explore Friends"
           >
             <Users size={16} />
@@ -2627,7 +2722,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={`nav-tab-btn ${viewMode === "mate" || viewMode === "mate_chat" ? "active" : ""}`}
+            className={`nav-tab-btn ${(viewMode === "mate" || viewMode === "mate_chat") && !viewingProfileId && !roomSettingsOpen && !viewingRoomInfo ? "active" : ""}`}
             onClick={() => { pushNavState("mate"); handleNavigateMate(); }}
             title="Mate - Anonymous Matchmaking"
           >
@@ -2635,7 +2730,6 @@ export default function App() {
             {!isSidebarCollapsed && (
               <>
                 <span>Mate</span>
-                {/* <span className="mate-sparkle-badge">Coming Soon!</span> */}
               </>
             )}
           </button>
@@ -2734,14 +2828,14 @@ export default function App() {
             {!isSidebarCollapsed ? (
               <div className="section-label">
                 <span>Rooms</span>
-                <button className="btn-section-action" title="Create Room" onClick={() => { pushNavState("create_room"); setIsCreateRoomOpen(true); }}>
+                <button className="btn-section-action" title="Create Room" onClick={handleAttemptCreateRoom}>
                   <Plus size={15} />
                 </button>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "4px" }}>
                 <div className="sidebar-collapsed-section-divider" title="Rooms" />
-                <button className="sidebar-collapsed-action-btn" title="Create Room" onClick={() => { pushNavState("create_room"); setIsCreateRoomOpen(true); }}>
+                <button className="sidebar-collapsed-action-btn" title="Create Room" onClick={handleAttemptCreateRoom}>
                   <Plus size={14} />
                 </button>
               </div>
@@ -2752,7 +2846,7 @@ export default function App() {
               if (userJoinedRooms.length === 0) {
                 return !isSidebarCollapsed ? (
                   <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", padding: "10px 8px" }}>
-                    No joined rooms yet. Discover rooms in <button type="button" className="btn-link-inline" onClick={() => { pushNavState("announcements"); setViewMode("announcements"); }}>Announcements</button>!
+                    No joined rooms yet. Discover rooms in <button type="button" className="btn-link-inline" onClick={() => { clearOverlayViews(); pushNavState("announcements"); setViewMode("announcements"); }}>Announcements</button>!
                   </div>
                 ) : null;
               }
@@ -4451,12 +4545,16 @@ export default function App() {
               <div className="explore-filter-toggle">
                 <button
                   type="button"
-                  className={`toggle-pill-btn ${exploreFilter === "all" ? "active" : ""}`}
-                  onClick={() => setExploreFilter("all")}
+                  className={`toggle-pill-btn ${exploreFilter === "recommendations" ? "active" : ""}`}
+                  onClick={() => setExploreFilter("recommendations")}
                 >
                   <Users size={14} />
-                  <span>All Users</span>
-                  <span className="toggle-pill-count">{exploreUsersList.length}</span>
+                  <span>Recommendations</span>
+                  <span className="toggle-pill-count">
+                    {searchQuery.trim()
+                      ? exploreUsersList.length
+                      : exploreUsersList.filter(u => u.friendship_status !== "accepted" && u.recommendation_reason).length}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -4475,17 +4573,19 @@ export default function App() {
             {(() => {
               const displayedExploreUsers = exploreFilter === "friends"
                 ? exploreUsersList.filter(u => u.friendship_status === "accepted")
-                : exploreUsersList;
+                : searchQuery.trim()
+                  ? exploreUsersList
+                  : exploreUsersList.filter(u => u.friendship_status !== "accepted" && u.recommendation_reason);
 
               return (
                 <div className="explore-grid">
                   {displayedExploreUsers.length === 0 ? (
                     <div style={{ gridColumn: "1/-1", textAlign: "center", color: "var(--text-dim)", padding: "40px 0" }}>
                       {exploreFilter === "friends"
-                        ? "You haven't added any friends yet. Switch to 'All Users' to discover people and send requests!"
+                        ? "You haven't added any friends yet. Check Recommendations or search above to connect."
                         : searchQuery
                           ? `No users found for "${searchQuery}"`
-                          : "Start searching for friends above!"}
+                          : "No recommendations yet. Join a room and chat with people to see friend recommendations here."}
                     </div>
                   ) : displayedExploreUsers.map(u => (
                     <div key={u.id} className="user-card">
@@ -4498,10 +4598,12 @@ export default function App() {
                           <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>@{u.username}</div>
                         </div>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        {/* <span className={getGenderBadgeClass(u.gender)}>{u.gender || "Prefer not to say"}</span> */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                         {u.friendship_status === "accepted" && (
                           <span className="badge-friends"><Check size={11} /> Friends</span>
+                        )}
+                        {u.friendship_status !== "accepted" && u.recommendation_reason && (
+                          <span className="badge-recommendation">{u.recommendation_reason}</span>
                         )}
                       </div>
                       {u.bio && <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "4px", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{u.bio}</p>}
@@ -4634,7 +4736,7 @@ export default function App() {
                   <button
                     type="button"
                     className="btn-primary btn-create-room"
-                    onClick={() => { pushNavState("create_room"); setIsCreateRoomOpen(true); }}
+                    onClick={handleAttemptCreateRoom}
                   >
                     <Plus size={16} />
                     <span>Create Room</span>
@@ -4950,23 +5052,29 @@ export default function App() {
               if (msg.isNotice) return (
                 <div key={msg.id} className="notice-line">{msg.text}</div>
               );
-              const isOutgoing = msg.sender_id === currentUser.id;
+              const isDeletedGuest = Boolean(msg.is_guest_deleted || !msg.sender_id);
+              const isOutgoing = !isDeletedGuest && msg.sender_id === currentUser.id;
               const time = formatMessageTimestamp(msg.created_at);
               return (
                 <div key={msg.id || Math.random()} className={`message-card ${isOutgoing ? "outgoing" : ""}`}>
-                  <div className="user-avatar" style={{ width: "34px", height: "34px" }} onClick={() => openUserProfile(msg.sender_id)} title="View Profile">
-                    <img src={msg.sender_avatar ? (msg.sender_avatar.startsWith("/api/") ? `${API_BASE}${msg.sender_avatar}` : msg.sender_avatar) : `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${msg.sender_username}`} alt={msg.sender_name} />
-                  </div>
+                  {isDeletedGuest ? (
+                    <div className="user-avatar guest-deleted" style={{ width: "34px", height: "34px" }} title="Guest User (session ended)">
+                      <UserIcon size={16} strokeWidth={1.5} />
+                    </div>
+                  ) : (
+                    <div className="user-avatar" style={{ width: "34px", height: "34px" }} onClick={() => openUserProfile(msg.sender_id)} title="View Profile">
+                      <img src={msg.sender_avatar ? (msg.sender_avatar.startsWith("/api/") ? `${API_BASE}${msg.sender_avatar}` : msg.sender_avatar) : `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${msg.sender_username}`} alt={msg.sender_name} />
+                    </div>
+                  )}
                   <div className="msg-bubble">
                     <div className="msg-header">
-                      <span className="msg-sender" onClick={() => openUserProfile(msg.sender_id)}>
-                        {isOutgoing ? "You" : msg.sender_name}
-                      </span>
-                      {/* {msg.sender_gender && (
-                        <span className={getGenderBadgeClass(msg.sender_gender)} style={{ fontSize: "0.6rem", padding: "1px 4px" }}>
-                          {msg.sender_gender}
+                      {isDeletedGuest ? (
+                        <span className="msg-sender guest-deleted">Guest User</span>
+                      ) : (
+                        <span className="msg-sender" onClick={() => openUserProfile(msg.sender_id)}>
+                          {isOutgoing ? "You" : msg.sender_name}
                         </span>
-                      )} */}
+                      )}
                       <span className="msg-time">{time}</span>
                     </div>
                     <div className="msg-text">{msg.content}</div>
@@ -5124,6 +5232,89 @@ export default function App() {
         </div>
       )}
 
+      {/* Room Creation Eligibility Popup (More than 5 Friends Required) */}
+      {roomCreateLockedModal && (
+        <div className="modal-overlay" onClick={() => setRoomCreateLockedModal(null)}>
+          <div className="modal-card instant-pass-warning-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="room-elig-title">
+            <div className="instant-pass-warning-icon" aria-hidden="true">
+              <Users size={20} strokeWidth={1.5} />
+            </div>
+            <h3 id="room-elig-title" className="instant-pass-warning-title">
+              More than 5 friends required
+            </h3>
+            <p className="instant-pass-warning-desc">
+              You need at least {roomCreateLockedModal.requiredCount} friends on PairUP before creating a new room. You currently have <strong>{roomCreateLockedModal.friendsCount}</strong> {roomCreateLockedModal.friendsCount === 1 ? "friend" : "friends"}.
+            </p>
+            <p className="instant-pass-warning-note">
+              Chat in existing rooms and send friend requests from Recommendations to unlock room creation.
+            </p>
+            <div className="instant-pass-warning-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setRoomCreateLockedModal(null)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setRoomCreateLockedModal(null);
+                  setViewingProfileId(null);
+                  setRoomSettingsOpen(false);
+                  setViewingRoomInfo(null);
+                  pushNavState("explore");
+                  setViewMode("explore");
+                  setExploreFilter("recommendations");
+                  loadExploreUsers("");
+                }}
+              >
+                <UserPlus size={15} strokeWidth={1.5} />
+                <span>Find friends</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Instant Pass Restricted Feature Warning Popup */}
+      {instantPassWarning && (
+        <div className="modal-overlay" onClick={() => setInstantPassWarning(null)}>
+          <div className="modal-card instant-pass-warning-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="ip-warn-title">
+            <div className="instant-pass-warning-icon" aria-hidden="true">
+              <Lock size={20} strokeWidth={1.5} />
+            </div>
+            <h3 id="ip-warn-title" className="instant-pass-warning-title">
+              Sign in to use exclusive features
+            </h3>
+            <p className="instant-pass-warning-desc">
+              You are currently browsing with Instant Pass. Sign in with Google to access {instantPassWarning.featureLabel}, permanent friends, and private rooms.
+            </p>
+            <p className="instant-pass-warning-note">
+              Stay here to continue your current guest session without losing your chat.
+            </p>
+            <div className="instant-pass-warning-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setInstantPassWarning(null)}
+              >
+                Continue as guest
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleConfirmInstantPassLogin}
+              >
+                <LogIn size={15} strokeWidth={1.5} />
+                <span>Sign in</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Public Room Join Confirmation Modal */}
       {roomJoinPrompt && (
         <div className="modal-overlay" onClick={() => setRoomJoinPrompt(null)}>
@@ -5232,6 +5423,7 @@ export default function App() {
                         style={{ marginTop: "8px", padding: "9px 16px", fontSize: "0.84rem" }}
                         onClick={() => {
                           setIsNewChatModalOpen(false);
+                          clearOverlayViews();
                           pushNavState("explore");
                           setViewMode("explore");
                           loadExploreUsers("");
@@ -5312,6 +5504,7 @@ export default function App() {
                   style={{ width: "100%", justifyContent: "center", fontSize: "0.82rem", padding: "9px 14px" }}
                   onClick={() => {
                     setIsNewChatModalOpen(false);
+                    clearOverlayViews();
                     pushNavState("explore");
                     setViewMode("explore");
                     loadExploreUsers("");

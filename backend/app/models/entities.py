@@ -20,7 +20,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    sent_messages = relationship("Message", back_populates="sender", foreign_keys="Message.sender_id", cascade="all, delete-orphan")
+    sent_messages = relationship("Message", back_populates="sender", foreign_keys="Message.sender_id", passive_deletes=True)
     moderated_rooms = relationship("RoomModerator", back_populates="user", cascade="all, delete-orphan")
 
 
@@ -128,7 +128,7 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    sender_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    sender_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Either belongs to a room or direct one-to-one chat
     room_id = Column(String(36), ForeignKey("rooms.id", ondelete="CASCADE"), nullable=True)

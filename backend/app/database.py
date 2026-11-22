@@ -102,6 +102,12 @@ async def init_db():
                     sync_conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_ghost BOOLEAN DEFAULT FALSE"))
                 except Exception:
                     pass
+                try:
+                    sync_conn.execute(text("ALTER TABLE messages ALTER COLUMN sender_id DROP NOT NULL"))
+                    sync_conn.execute(text("ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_sender_id_fkey"))
+                    sync_conn.execute(text("ALTER TABLE messages ADD CONSTRAINT messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL"))
+                except Exception:
+                    pass
 
         await conn.run_sync(migrate_schema)
 
