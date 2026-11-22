@@ -453,19 +453,26 @@ export default function App() {
           client_id: googleClientId,
           callback: handleGoogleCredentialResponse,
         });
-        const timer = setTimeout(() => {
+        const renderGoogleBtn = () => {
           const btn = document.getElementById("google-signin-btn");
           if (btn) {
             btn.innerHTML = "";
+            const availWidth = btn.parentElement?.clientWidth || (window.innerWidth - 64);
+            const btnWidth = Math.min(340, Math.max(210, Math.floor(availWidth)));
             window.google.accounts.id.renderButton(btn, {
-              theme: "outline", size: "large", shape: "rectangular", width: 340, text: "continue_with"
+              theme: theme === "dark" ? "filled_black" : "outline",
+              size: "large",
+              shape: "rectangular",
+              width: btnWidth,
+              text: "continue_with"
             });
           }
-        }, 50);
+        };
+        const timer = setTimeout(renderGoogleBtn, 50);
         return () => clearTimeout(timer);
       } catch (e) { console.error(e); }
     }
-  }, [token, googleClientId, showAuthModal]);
+  }, [token, googleClientId, showAuthModal, theme]);
 
   const handleGoogleCredentialResponse = async (response) => {
     setAuthError("");
