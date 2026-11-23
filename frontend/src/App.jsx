@@ -12,6 +12,7 @@ import {
   clearAllChatCache
 } from './utils/chatCache.js';
 import { syncAdSenseForView } from './utils/adsense.js';
+import { compressImageFile } from './utils/imageCompress.js';
 import {
   Hash, MessageSquare, Megaphone, Users, Send, Plus, LogOut, Search,
   UserPlus, Check, X, UserCheck, Clock, Shuffle, Edit3,
@@ -252,6 +253,9 @@ export default function App() {
 
   // Room Creation Eligibility Popup (requires > 5 friends for regular users)
   const [roomCreateLockedModal, setRoomCreateLockedModal] = useState(null);
+
+  // Profile Picture Updated Confirmation Popup
+  const [avatarUpdatedModal, setAvatarUpdatedModal] = useState(null);
 
   // Active Chat Options Menu (Three Dots)
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
@@ -1460,23 +1464,47 @@ export default function App() {
 
   const handleAvatarUpload = async (file) => {
     if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
     setUploadingAvatar(true);
     try {
+      // Compress and resize client-side (512px WebP/JPEG) to save bandwidth & storage
+      const compressedFile = await compressImageFile(file, { maxSize: 512, quality: 0.82 });
+      const formData = new FormData();
+      formData.append("file", compressedFile);
+
       const res = await fetch(`${API_BASE}/api/upload/avatar`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData
       });
+      if (res.status === 401) {
+        handleExpiredSession();
+        return;
+      }
       const data = await res.json();
-      if (!res.ok) { alert(data.detail || "Upload failed"); return; }
-      const updatedUser = { ...currentUser, avatar: data.avatar_url };
+      if (!res.ok) {
+        showSnackbar(data.detail || "Upload failed", "error");
+        return;
+      }
+
+      const newAvatarUrl = data.avatar_url;
+      const updatedUser = { ...(data.user || currentUser), avatar: newAvatarUrl };
       setCurrentUser(updatedUser);
       localStorage.setItem("pairup_user", JSON.stringify(updatedUser));
-      openUserProfile(currentUser.id, "profile");
-    } catch (e) { alert("Upload error"); }
-    finally { setUploadingAvatar(false); }
+      setProfileData(prev => (
+        prev && prev.user?.id === updatedUser.id
+          ? { ...prev, user: { ...prev.user, avatar: newAvatarUrl } }
+          : prev
+      ));
+      setMessages(prev => prev.map(m =>
+        m.sender_id === updatedUser.id ? { ...m, sender_avatar: newAvatarUrl } : m
+      ));
+      setAvatarUpdatedModal({ avatarUrl: newAvatarUrl, name: updatedUser.name });
+    } catch (e) {
+      showSnackbar("Upload error. Please try again.", "error");
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarFileRef.current) avatarFileRef.current.value = "";
+    }
   };
 
   // ──────────────────────────────────────────────────────────────
@@ -2202,20 +2230,25 @@ export default function App() {
 
   const handleRoomPicUpload = async (file) => {
     if (!file || !roomSettingsData) return;
-    const formData = new FormData();
-    formData.append("file", file);
     setUploadingRoomPic(true);
     try {
+      const compressedFile = await compressImageFile(file, { maxSize: 512, quality: 0.82 });
+      const formData = new FormData();
+      formData.append("file", compressedFile);
       const res = await fetch(`${API_BASE}/api/upload/room/${roomSettingsData.slug}/picture`, {
         method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData
       });
       const data = await res.json();
-      if (!res.ok) { alert(data.detail || "Upload failed"); return; }
+      if (!res.ok) { showSnackbar(data.detail || "Upload failed", "error"); return; }
       const updated = { ...roomSettingsData, picture: data.picture_url };
       setRoomSettingsData(updated);
       setRooms(prev => prev.map(r => r.slug === updated.slug ? updated : r));
-    } catch (e) { alert("Upload error"); }
-    finally { setUploadingRoomPic(false); }
+      showSnackbar("Room picture updated", "success");
+    } catch (e) { showSnackbar("Upload error", "error"); }
+    finally {
+      setUploadingRoomPic(false);
+      if (roomPicRef.current) roomPicRef.current.value = "";
+    }
   };
 
   // ──────────────────────────────────────────────────────────────
@@ -5285,6 +5318,33 @@ export default function App() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Profile Picture Updated Confirmation Popup */}
+      {avatarUpdatedModal && (
+        <div className="modal-overlay" onClick={() => setAvatarUpdatedModal(null)}>
+          <div className="modal-card instant-pass-warning-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="avatar-updated-title">
+            <div className="user-avatar" style={{ width: 64, height: 64, cursor: "default" }}>
+              <img src={`${API_BASE}${avatarUpdatedModal.avatarUrl}`} alt={avatarUpdatedModal.name || "Updated profile"} />
+            </div>
+            <h3 id="avatar-updated-title" className="instant-pass-warning-title">
+              Profile picture is updated
+            </h3>
+            <p className="instant-pass-warning-desc">
+              Your new display picture has been compressed, saved, and applied across your profile and chats.
+            </p>
+            <div className="instant-pass-warning-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setAvatarUpdatedModal(null)}
+              >
+                <Check size={15} strokeWidth={1.5} />
+                <span>Done</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

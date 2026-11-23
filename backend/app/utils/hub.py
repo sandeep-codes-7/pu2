@@ -35,6 +35,12 @@ class HubConnectionManager:
             and self.socket_users[ws]["id"] not in self.ghost_users
         }
 
+    def update_user_avatar(self, user_id: str, avatar_url: Optional[str]):
+        """Updates cached avatar metadata on all active WebSockets for this user."""
+        for ws in list(self.user_sockets.get(user_id, set())):
+            if ws in self.socket_users:
+                self.socket_users[ws]["avatar"] = avatar_url
+
     async def set_ghost_mode(self, user_id: str, is_ghost: bool):
         if is_ghost:
             self.ghost_users.add(user_id)

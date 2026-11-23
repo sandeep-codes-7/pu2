@@ -7,6 +7,8 @@ from typing import List, Optional
 from datetime import datetime, timezone
 import re
 import os
+import io
+import time
 import uuid
 import shutil
 import secrets
@@ -220,6 +222,53 @@ async def _build_room_out(room: Room, db: AsyncSession, current_user_id: Optiona
     )
 
 
+def _delete_old_uploaded_files(directory: Path, prefix: str, previous_url: Optional[str] = None):
+    """Deletes any previous uploaded image files for a user/room to reclaim storage."""
+    base_dir = directory.resolve()
+    candidates = set()
+    try:
+        for p in directory.glob(f"{prefix}.*"):
+            candidates.add(p)
+        for p in directory.glob(f"{prefix}_*.*"):
+            candidates.add(p)
+    except Exception:
+        pass
+
+    if previous_url and "/uploads/" in previous_url:
+        old_name = previous_url.rsplit("/", 1)[-1].split("?", 1)[0]
+        if SAFE_FILENAME_RE.match(old_name) and ".." not in old_name:
+            candidates.add(directory / old_name)
+
+    for p in candidates:
+        try:
+            resolved = p.resolve()
+            if str(resolved).startswith(str(base_dir)) and resolved.is_file():
+                resolved.unlink()
+        except Exception:
+            pass
+
+
+def _compress_image_bytes(contents: bytes, ext: str, max_dim: int = 512, quality: int = 82) -> tuple[bytes, str]:
+    """Server-side fallback compression using Pillow if available (preserves animated GIFs)."""
+    if ext == "gif":
+        return contents, ext
+    try:
+        from PIL import Image, ImageOps
+        with Image.open(io.BytesIO(contents)) as im:
+            im = ImageOps.exif_transpose(im)
+            if im.mode not in ("RGB", "RGBA"):
+                im = im.convert("RGBA" if "A" in im.getbands() else "RGB")
+            im.thumbnail((max_dim, max_dim))
+            out_buf = io.BytesIO()
+            im.save(out_buf, format="WEBP", quality=quality, method=4)
+            compressed = out_buf.getvalue()
+            if compressed and (len(compressed) < len(contents) or max(im.size) <= max_dim):
+                return compressed, "webp"
+    except Exception:
+        pass
+    return contents, ext
+
+
 # ─────────────────────────────────────────────────────────────────
 # UPLOAD: User Avatar
 # ─────────────────────────────────────────────────────────────────
@@ -240,7 +289,13 @@ async def upload_avatar(
     if not ext:
         raise HTTPException(status_code=400, detail="Invalid or corrupted image file")
 
-    filename = f"{current_user.id}.{ext}"
+    # Compress on server if Pillow is available (in addition to client-side compression)
+    contents, ext = _compress_image_bytes(contents, ext, max_dim=512, quality=82)
+
+    # Erase any previous display pictures for this user from storage
+    _delete_old_uploaded_files(AVATAR_DIR, current_user.id, current_user.avatar)
+
+    filename = f"{current_user.id}_{int(time.time())}.{ext}"
     dest = (AVATAR_DIR / filename).resolve()
     if not str(dest).startswith(str(AVATAR_DIR.resolve())):
         raise HTTPException(status_code=400, detail="Invalid file destination")
@@ -252,6 +307,7 @@ async def upload_avatar(
     current_user.avatar = avatar_url
     await db.commit()
     await db.refresh(current_user)
+    hub.update_user_avatar(current_user.id, avatar_url)
     return {"avatar_url": avatar_url, "user": UserOut.from_orm(current_user)}
 
 
@@ -283,7 +339,10 @@ async def upload_room_picture(
     if not ext:
         raise HTTPException(status_code=400, detail="Invalid or corrupted image file")
 
-    filename = f"{room.id}.{ext}"
+    contents, ext = _compress_image_bytes(contents, ext, max_dim=512, quality=82)
+    _delete_old_uploaded_files(ROOM_IMG_DIR, str(room.id), getattr(room, "picture", None))
+
+    filename = f"{room.id}_{int(time.time())}.{ext}"
     dest = (ROOM_IMG_DIR / filename).resolve()
     if not str(dest).startswith(str(ROOM_IMG_DIR.resolve())):
         raise HTTPException(status_code=400, detail="Invalid file destination")
